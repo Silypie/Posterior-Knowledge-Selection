@@ -40,7 +40,7 @@ class Encoder(nn.Module):
         inputs = self.embedding(X)
         inputs = inputs.transpose(0, 1)
         seq_lengths = torch.sum(X > 0, dim=-1)  # [n_batch]
-        packed_inputs = rnn.pack_padded_sequence(inputs, seq_lengths, enforce_sorted=False)
+        packed_inputs = rnn.pack_padded_sequence(inputs, seq_lengths.cpu(), enforce_sorted=False)
         packed_outputs, hidden = self.gru(packed_inputs)  # hidden: [2*n_layer, n_batch, n_hidden]
         last_hidden = hidden.view(self.n_layer, 2, n_batch, self.n_hidden)
         f_hidden, b_hidden = last_hidden[-1]
@@ -88,7 +88,7 @@ class KnowledgeEncoder(nn.Module):
             for i in range(N):
                 k = inputs[i].transpose(0, 1)  # [n_batch, seq_len, n_embed]
                 seq_lengths = torch.sum(K[:, i] > 0, dim=-1)
-                packed_inputs = rnn.pack_padded_sequence(k, seq_lengths, enforce_sorted=False)
+                packed_inputs = rnn.pack_padded_sequence(k, seq_lengths.cpu(), enforce_sorted=False)
                 _, hidden = self.gru(packed_inputs)  # hidden: [2*n_layer, n_batch, n_hidden]
                 hidden = hidden.view(self.n_layer, 2, n_batch, self.n_hidden)
                 f_hidden, b_hidden = hidden[-1]
@@ -101,7 +101,7 @@ class KnowledgeEncoder(nn.Module):
             inputs = self.embedding(y)
             inputs = inputs.transpose(0, 1)  # [seq_len, n_batch, n_embed]
             seq_lengths = torch.sum(y > 0, dim=-1)  # [n_batch]
-            packed_inputs = rnn.pack_padded_sequence(inputs, seq_lengths, enforce_sorted=False)
+            packed_inputs = rnn.pack_padded_sequence(inputs, seq_lengths.cpu(), enforce_sorted=False)
             _, hidden = self.gru(packed_inputs)  # hidden: [2*n_layer, n_batch, n_hidden]
             hidden = hidden.view(self.n_layer, 2, n_batch, self.n_hidden)
             f_hidden, b_hidden = hidden[-1]
@@ -190,7 +190,7 @@ class Decoder(nn.Module):  # Hierarchical Gated Fusion Unit
             embedding = torch.Tensor(n_vocab, n_embed)
             vectors = GloVe()
             for word in vocab.stoi:
-                if word in vectors.stoi:
+                if word in vectors:
                     embedding[vocab.stoi[word]] = vectors[word]
             self.embedding = nn.Embedding.from_pretrained(embedding)
             print("decoder embedding is initialized with Glove")
