@@ -137,21 +137,25 @@ def load_data(path, vocab):
         for line in file:
             dialog_id = line.split()[0]
             if dialog_id == "1":
-                k = []
+                k = []  # 新的一轮对话
 
             if "your persona:" in line:
-                if len(k) == 3:
+                if len(k) == 3: # 最多只考虑3条知识
                     continue
                 k_line = line.split("persona:")[1].strip("\n").lower()
                 k.append(k_line)
 
             elif "__SILENCE__" not in line:
+                # 在这里，对于每轮对话，由于共用同样一些知识，所以每轮对话都直接append之前收集到的知识进行复制
                 K.append(k)
                 X_line = " ".join(line.split("\t")[0].split()[1:]).lower()
                 y_line = line.split("\t")[1].strip("\n").lower()
+                # 并没有考虑对话历史，只对每轮对话进行知识选择和回复生成
+                # ToDo：跟DiffKS一样可以只使用上一轮对话和当前轮的问题，拼接X：[x_t-1,y_t-1,x_t]
                 X.append(X_line)
                 y.append(y_line)
 
+    # 将token转换为index
     X_ind = []
     y_ind = []
     K_ind = []
@@ -187,7 +191,7 @@ def load_data(path, vocab):
                 else:
                     k_temp.append(vocab.stoi['<UNK>'])
             K_temp.append(k_temp)
-        K_ind.append(K_temp)
+        K_ind.append(K_temp)    #二维张量：[轮数, 知识数]
 
     return X_ind, y_ind, K_ind
 
@@ -210,7 +214,7 @@ class Vocabulary:
 
 class PersonaDataset(Dataset):
     def __init__(self, X, y, K):
-        X_len = max([len(line) for line in X])
+        X_len = max([len(line) for line in X])  # 最大的序列长度
         y_len = max([len(line) for line in y])
         k_len = 0
         for lines in K:
@@ -223,6 +227,7 @@ class PersonaDataset(Dataset):
         src_K = list()
         tgt_y = list()
 
+        # 所有样本进行对齐操作
         for line in X:
             line.extend([params.PAD] * (X_len - len(line)))
             src_X.append(line)
