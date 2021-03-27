@@ -27,7 +27,7 @@ def evaluate(model, test_loader):
         tgt_y = tgt_y.cuda()
 
         encoder_outputs, hidden, x = encoder(src_X)
-        encoder_mask = (src_X == 0).unsqueeze(1).byte()
+        encoder_mask = (src_X == 0)[:, :encoder_outputs.size(0)].unsqueeze(1).byte()
         K = Kencoder(src_K)
         k_i = manager(x, None, K)
         n_batch = src_X.size(0)
