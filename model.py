@@ -39,11 +39,11 @@ class Encoder(nn.Module):
         n_batch = X.size(0)
         inputs = self.embedding(X)
         inputs = inputs.transpose(0, 1)
-        seq_lengths = torch.sum(X > 0, dim=-1)  # [n_batch]
+        seq_lengths = torch.sum(X > 0, dim=-1)  # [n_batch]，不算pad的序列长度
         packed_inputs = rnn.pack_padded_sequence(inputs, seq_lengths.cpu(), enforce_sorted=False)
         packed_outputs, hidden = self.gru(packed_inputs)  # hidden: [2*n_layer, n_batch, n_hidden]
         last_hidden = hidden.view(self.n_layer, 2, n_batch, self.n_hidden)
-        f_hidden, b_hidden = last_hidden[-1]
+        f_hidden, b_hidden = last_hidden[-1]    # 取最后一层的隐藏状态
         outputs, _ = rnn.pad_packed_sequence(packed_outputs)
         outputs = (outputs[:, :, :self.n_hidden] + outputs[:, :, self.n_hidden:])
         # outputs: [seq_len, n_batch, n_hidden]
@@ -86,7 +86,7 @@ class KnowledgeEncoder(nn.Module):
             inputs = inputs.transpose(0, 1)  # [N, n_batch, seq_len, n_embed]
             encoded = torch.zeros(N, n_batch, 2*self.n_hidden)
             for i in range(N):
-                k = inputs[i].transpose(0, 1)  # [n_batch, seq_len, n_embed]
+                k = inputs[i].transpose(0, 1)  # [seq_len, n_batch, n_embed]
                 seq_lengths = torch.sum(K[:, i] > 0, dim=-1)
                 packed_inputs = rnn.pack_padded_sequence(k, seq_lengths.cpu(), enforce_sorted=False)
                 _, hidden = self.gru(packed_inputs)  # hidden: [2*n_layer, n_batch, n_hidden]
@@ -96,7 +96,7 @@ class KnowledgeEncoder(nn.Module):
             return encoded.transpose(0, 1).cuda()  # [n_batch, N, 2*n_hidden]
 
         else:  # [n_batch, seq_len]
-            y = K[:, 1:]
+            y = K[:, 1:]    # 不考虑<SOS>
             n_batch = y.size(0)
             inputs = self.embedding(y)
             inputs = inputs.transpose(0, 1)  # [seq_len, n_batch, n_embed]
@@ -129,23 +129,23 @@ class Manager(nn.Module):
         :return:
             prior, posterior, selected knowledge, selected knowledge logits for BOW_loss
         '''
-        if y is not None:
-            prior = F.log_softmax(torch.bmm(x.unsqueeze(1), K.transpose(-1, -2)), dim=-1).squeeze(1)
+        if y is not None:   # 训练时
+            prior = F.log_softmax(torch.bmm(x.unsqueeze(1), K.transpose(-1, -2)), dim=-1).squeeze(1) # [n_batch, N]
             response = self.mlp(torch.cat((x, y), dim=-1))  # response: [n_batch, 2*n_hidden]
             K = K.transpose(-1, -2)  # K: [n_batch, 2*n_hidden, N]
-            posterior_logits = torch.bmm(response.unsqueeze(1), K).squeeze(1)
+            posterior_logits = torch.bmm(response.unsqueeze(1), K).squeeze(1)  # [n_batch, N]
             posterior = F.softmax(posterior_logits, dim=-1)
             k_idx = gumbel_softmax(posterior_logits, self.temperature)  # k_idx: [n_batch, N(one_hot)]
-            k_i = torch.bmm(K, k_idx.unsqueeze(2)).squeeze(2)  # k_i: [n_batch, 2*n_hidden]
-            k_logits = F.log_softmax(self.mlp_k(k_i), dim=-1)  # k_logits: [n_batch, n_vocab]
+            k_i = torch.bmm(K, k_idx.unsqueeze(2)).squeeze(2)  # k_i: [n_batch, 2*n_hidden] 获取选择的知识的hidden
+            k_logits = F.log_softmax(self.mlp_k(k_i), dim=-1)  # k_logits: [n_batch, n_vocab] 根据知识得到词的分布
             return prior, posterior, k_i, k_logits  # prior: [n_batch, N], posterior: [n_batch, N]
-        else:
+        else:   # 测试时
             n_batch = K.size(0)
-            k_i = torch.Tensor(n_batch, 2*self.n_hidden).cuda()
-            prior = torch.bmm(x.unsqueeze(1), K.transpose(-1, -2)).squeeze(1)
-            k_idx = prior.max(1)[1].unsqueeze(1)  # k_idx: [n_batch, 1]
+            k_i = torch.Tensor(n_batch, 2*self.n_hidden).cuda() # 存储每个样本选择的知识的hidden
+            prior = torch.bmm(x.unsqueeze(1), K.transpose(-1, -2)).squeeze(1) # [n_batch, N]
+            k_idx = prior.max(1)[1].unsqueeze(1)  # k_idx: [n_batch, 1] 直接根据先验分布选择的知识索引
             for i in range(n_batch):
-                k_i[i] = K[i, k_idx[i]]
+                k_i[i] = K[i, k_idx[i]]  # 得到每个样本选择的知识的hidden
             return k_i
 
 
@@ -230,7 +230,7 @@ class Decoder(nn.Module):  # Hierarchical Gated Fusion Unit
         r = torch.sigmoid(self.z_weight(t_hidden))  # [n_layer, n_batch, n_hidden]
         hidden = torch.mul(r, y_hidden) + torch.mul(1-r, k_hidden) # [n_layer, n_batch, n_hidden]
         output = hidden[-1]  # [n_batch, n_hidden]
-        context = context.squeeze(0)  # [n_batch, 2*n_hidden]
+        context = context.squeeze(0)  # [n_batch, n_hidden]
         output = self.out(torch.cat((output, context), dim=1))  # [n_batch, n_vocab]
         output = F.log_softmax(output, dim=1)
         return output, hidden, attn_weights

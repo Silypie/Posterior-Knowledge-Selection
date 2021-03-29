@@ -89,7 +89,7 @@ def train(model, optimizer, train_loader, args):
 
             optimizer.zero_grad()
             encoder_outputs, hidden, x = encoder(src_X)
-            encoder_mask = (src_X == 0)[:, :encoder_outputs.size(0)].unsqueeze(1).byte()
+            encoder_mask = (src_X == 0)[:, :encoder_outputs.size(0)].unsqueeze(1).bool() # fix warning bug
             y = Kencoder(src_y)
             K = Kencoder(src_K)
             prior, posterior, k_i, k_logits = manager(x, y, K)
@@ -175,6 +175,10 @@ def main():
         Kencoder = init_model(Kencoder, restore=params.Kencoder_restore)
         manager = init_model(manager, restore=params.manager_restore)
         decoder = init_model(decoder, restore=params.decoder_restore)
+    
+    # ToDo：目前的代码所有的embedding都是独立的，可以参考transformer源码使用直接赋值的方法共享参数：
+    #if emb_src_trg_weight_sharing:
+    #   self.encoder.src_word_emb.weight = self.decoder.trg_word_emb.weight
 
     model = [encoder, Kencoder, manager, decoder]
     parameters = list(encoder.parameters()) + list(Kencoder.parameters()) + \
