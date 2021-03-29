@@ -140,7 +140,7 @@ def load_data(path, vocab):
                 k = []  # 新的一轮对话
 
             if "your persona:" in line:
-                if len(k) == 3: # 最多只考虑3条知识
+                if len(k) == 3: # ToDo：最多只考虑3条知识
                     continue
                 k_line = line.split("persona:")[1].strip("\n").lower()
                 k.append(k_line)
