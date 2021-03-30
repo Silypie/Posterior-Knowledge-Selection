@@ -27,6 +27,7 @@ def evaluate(model, test_loader):
         tgt_y = tgt_y.cuda()
 
         encoder_outputs, hidden, x = encoder(src_X)
+        # 每个批次的最长序列长度不一定等于数据集中的最长序列长度
         encoder_mask = (src_X == 0)[:, :encoder_outputs.size(0)].unsqueeze(1).bool()
         K = Kencoder(src_K)
         k_i = manager(x, None, K)

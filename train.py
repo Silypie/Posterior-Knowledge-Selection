@@ -1,3 +1,4 @@
+import os
 import random
 import argparse
 import json
@@ -7,7 +8,7 @@ import torch.nn as nn
 from torch.nn.utils import clip_grad_norm_
 import params
 from utils import init_model, save_models, \
-    build_vocab, load_data, get_data_loader
+    build_vocab, load_data, get_data_loader, Vocabulary
 from model import Encoder, KnowledgeEncoder, Decoder, Manager
 
 
@@ -52,7 +53,7 @@ def pre_train(model, optimizer, train_loader, args):
             n_vocab = params.n_vocab
             seq_len = src_y.size(1) - 1
             _, _, _, k_logits = manager(x, y, K) # k_logits: [n_batch, n_vocab]
-            k_logits = k_logits.repeat(seq_len, 1, 1).transpose(0, 1).contiguous().view(-1, n_vocab)
+            k_logits = k_logits.repeat(seq_len, 1, 1).transpose(0, 1).contiguous().view(-1, n_vocab) # [n_batch*seq_len, n_vocab]
             bow_loss = NLLLoss(k_logits, src_y[:, 1:].contiguous().view(-1))
             bow_loss.backward()
             clip_grad_norm_(parameters, args.grad_clip)
@@ -155,11 +156,19 @@ def main():
     assert torch.cuda.is_available()
 
     print("loading_data...")
-    vocab = build_vocab(train_path, n_vocab)
+    # 训练时加载处理好的词典（如果有的话）
+    if os.path.exists("vocab.json"):
+        vocab = Vocabulary()
+        with open('vocab.json', 'r') as fp:
+            vocab.stoi = json.load(fp)
 
-    # save vocab
-    with open('vocab.json', 'w') as fp:
-        json.dump(vocab.stoi, fp)
+        for key, value in vocab.stoi.items():
+            vocab.itos.append(key)
+    else:
+        vocab = build_vocab(train_path, n_vocab)
+        # save vocab
+        with open('vocab.json', 'w') as fp:
+            json.dump(vocab.stoi, fp)
 
     train_X, train_y, train_K = load_data(train_path, vocab)
     train_loader = get_data_loader(train_X, train_y, train_K, n_batch)
