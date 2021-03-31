@@ -48,11 +48,11 @@ def pre_train(model, optimizer, train_loader, args):
             optimizer.zero_grad()
             _, _, x = encoder(src_X)
             y = Kencoder(src_y)
-            K = Kencoder(src_K)
+            K, knowledge_length = Kencoder(src_K)
 
             n_vocab = params.n_vocab
             seq_len = src_y.size(1) - 1
-            _, _, _, k_logits = manager(x, y, K) # k_logits: [n_batch, n_vocab]
+            _, _, _, k_logits = manager(x, y, K, knowledge_length) # k_logits: [n_batch, n_vocab]
             k_logits = k_logits.repeat(seq_len, 1, 1).transpose(0, 1).contiguous().view(-1, n_vocab) # [n_batch*seq_len, n_vocab]
             bow_loss = NLLLoss(k_logits, src_y[:, 1:].contiguous().view(-1))
             bow_loss.backward()

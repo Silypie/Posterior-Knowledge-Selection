@@ -90,8 +90,8 @@ class KnowledgeEncoder(nn.Module):
             for i in range(N):
                 k = inputs[i].transpose(0, 1)  # [seq_len, n_batch, n_embed]
                 seq_lengths = torch.sum(K[:, i] > 0, dim=-1) # [n_batch]
-                length_isnot_zero = seq_lengths!=0  # [n_batch]
-                knowledge_length[i] = length_isnot_zero
+                first_not_eos = K[:, i, 0] != 3 # [n_batch]
+                knowledge_length[i] = first_not_eos
                 packed_inputs = rnn.pack_padded_sequence(k, seq_lengths.cpu(), enforce_sorted=False)
                 _, hidden = self.gru(packed_inputs)  # hidden: [2*n_layer, n_batch, n_hidden]
                 hidden = hidden.view(self.n_layer, 2, n_batch, self.n_hidden)

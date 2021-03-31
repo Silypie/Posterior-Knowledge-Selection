@@ -226,7 +226,7 @@ class WizardDataset(Dataset):
                 line.extend([params.PAD] * (k_len - len(line)))
                 src_k.append(line)
             gap = num_k - len(src_k)
-            knowledge_pad = [params.PAD] * k_len
+            knowledge_pad = [params.EOS] * k_len
             for i in range(gap):
                 src_k.append(knowledge_pad)
             src_K.append(src_k)
