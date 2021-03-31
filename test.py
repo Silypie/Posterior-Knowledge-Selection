@@ -22,9 +22,9 @@ def evaluate(model, test_loader):
     total_loss = 0
 
     for step, (src_X, _, src_K, tgt_y) in enumerate(test_loader):
-        src_X = src_X.cuda()
-        src_K = src_K.cuda()
-        tgt_y = tgt_y.cuda()
+        src_X = src_X.to(device)
+        src_K = src_K.to(device)
+        tgt_y = tgt_y.to(device)
 
         encoder_outputs, hidden, x = encoder(src_X)
         # 每个批次的最长序列长度不一定等于数据集中的最长序列长度
@@ -35,9 +35,9 @@ def evaluate(model, test_loader):
         max_len = tgt_y.size(1)
         n_vocab = params.n_vocab
 
-        outputs = torch.zeros(max_len, n_batch, n_vocab).cuda()
+        outputs = torch.zeros(max_len, n_batch, n_vocab).to(device)
         hidden = hidden[params.n_layer:]
-        output = torch.LongTensor([params.SOS] * n_batch).cuda()  # [n_batch]
+        output = torch.LongTensor([params.SOS] * n_batch).to(device)  # [n_batch]
         for t in range(max_len):
             output, hidden, attn_weights = decoder(output, k_i, hidden, encoder_outputs, encoder_mask)
             outputs[t] = output
@@ -60,7 +60,7 @@ def main():
     n_batch = args.n_batch
     temperature = params.temperature
     test_path = params.test_path
-    assert torch.cuda.is_available()
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     print("loading_data...")
 
@@ -79,10 +79,10 @@ def main():
     test_loader = get_data_loader(test_X, test_y, test_K, n_batch)
     print("successfully loaded")
 
-    encoder = Encoder(n_vocab, n_embed, n_hidden, n_layer).cuda()
-    Kencoder = KnowledgeEncoder(n_vocab, n_embed, n_hidden, n_layer).cuda()
-    manager = Manager(n_hidden, n_vocab, temperature).cuda()
-    decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer).cuda()
+    encoder = Encoder(n_vocab, n_embed, n_hidden, n_layer).to(device)
+    Kencoder = KnowledgeEncoder(n_vocab, n_embed, n_hidden, n_layer).to(device)
+    manager = Manager(n_hidden, n_vocab, temperature).to(device)
+    decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer).to(device)
 
     encoder = init_model(encoder, restore=params.encoder_restore)
     Kencoder = init_model(Kencoder, restore=params.Kencoder_restore)

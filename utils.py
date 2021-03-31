@@ -9,9 +9,10 @@ from collections import Counter
 import nltk
 import json
 
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 def sample_gumbel(shape, eps=1e-20):
-    U = torch.rand(shape).cuda()
+    U = torch.rand(shape).to(device)
     return -torch.log(-torch.log(U + eps) + eps)
 
 
@@ -44,7 +45,7 @@ def init_model(net, restore=None):
     # check if cuda is available
     if torch.cuda.is_available():
         cudnn.benchmark = True
-        net.cuda()
+        net.to(device)
     return net
 
 
@@ -285,5 +286,5 @@ def knowledgeToIndex(K, vocab):
     K1 = torch.LongTensor(K1).unsqueeze(0)
     K2 = torch.LongTensor(K2).unsqueeze(0)
     K3 = torch.LongTensor(K3).unsqueeze(0)
-    K = torch.cat((K1, K2, K3), dim=0).unsqueeze(0).cuda()  # K: [1, 3, seq_len]
+    K = torch.cat((K1, K2, K3), dim=0).unsqueeze(0).to(device)  # K: [1, 3, seq_len]
     return K

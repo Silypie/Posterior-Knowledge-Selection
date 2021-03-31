@@ -13,7 +13,7 @@ def main():
     n_hidden = params.n_hidden
     n_embed = params.n_embed
     temperature = params.temperature
-    assert torch.cuda.is_available()
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     if os.path.exists("vocab.json"):
         vocab = Vocabulary()
@@ -27,10 +27,10 @@ def main():
         return
 
     print("loading model...")
-    encoder = Encoder(n_vocab, n_embed, n_hidden, n_layer).cuda()
-    Kencoder = KnowledgeEncoder(n_vocab, n_embed, n_hidden, n_layer).cuda()
-    manager = Manager(n_hidden, n_vocab, temperature).cuda()
-    decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer).cuda()
+    encoder = Encoder(n_vocab, n_embed, n_hidden, n_layer).to(device)
+    Kencoder = KnowledgeEncoder(n_vocab, n_embed, n_hidden, n_layer).to(device)
+    manager = Manager(n_hidden, n_vocab, temperature).to(device)
+    decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer).to(device)
 
     encoder = init_model(encoder, restore=params.encoder_restore)
     Kencoder = init_model(Kencoder, restore=params.Kencoder_restore)
@@ -78,13 +78,13 @@ def main():
                     X.append(vocab.stoi[word])
                 else:
                     X.append(vocab.stoi["<UNK>"])
-            X = torch.LongTensor(X).unsqueeze(0).cuda()  # X: [1, x_seq_len]
+            X = torch.LongTensor(X).unsqueeze(0).to(device)  # X: [1, x_seq_len]
 
             encoder_outputs, hidden, x = encoder(X)
             k_i = manager(x, None, K)
-            outputs = torch.zeros(max_len, 1, n_vocab).cuda()  # outputs: [max_len, 1, n_vocab]
+            outputs = torch.zeros(max_len, 1, n_vocab).to(device)  # outputs: [max_len, 1, n_vocab]
             hidden = hidden[decoder.n_layer:]
-            output = torch.LongTensor([params.SOS]).cuda()
+            output = torch.LongTensor([params.SOS]).to(device)
 
             for t in range(max_len):
                 output, hidden, attn_weights = decoder(output, k_i, hidden, encoder_outputs)

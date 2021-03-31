@@ -6,6 +6,8 @@ import torch.nn.functional as F
 from torchnlp.word_to_vector import GloVe
 from utils import gumbel_softmax
 
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 
 class Encoder(nn.Module):
     def __init__(self, n_vocab, n_embed, n_hidden, n_layer, vocab=None):
@@ -98,7 +100,7 @@ class KnowledgeEncoder(nn.Module):
                 f_hidden, b_hidden = hidden[-1]
                 encoded[i] = torch.cat((f_hidden, b_hidden), dim=1)  # encoded: [n_batch, 2*n_hidden]
             # [n_batch, N, 2*n_hidden], [n_batch, N]
-            return encoded.transpose(0, 1).cuda(), knowledge_length.transpose(0, 1).cuda()
+            return encoded.transpose(0, 1).to(device), knowledge_length.transpose(0, 1).to(device)
 
         else:  # [n_batch, seq_len]
             y = K[:, 1:]    # 不考虑<SOS>
@@ -155,7 +157,7 @@ class Manager(nn.Module):
             return prior, posterior, k_i, k_logits  # prior: [n_batch, N], posterior: [n_batch, N]
         else:   # 测试时
             n_batch = K.size(0)
-            k_i = torch.Tensor(n_batch, 2*self.n_hidden).cuda() # 存储每个样本选择的知识的hidden
+            k_i = torch.Tensor(n_batch, 2*self.n_hidden).to(device) # 存储每个样本选择的知识的hidden
             prior = F.log_softmax(torch.bmm(x.unsqueeze(1), K.transpose(-1, -2)), dim=-1).squeeze(1) # [n_batch, N]
             # 将长度为0的知识对应的值置为0，即不考虑
             prior = torch.mul(prior, knowledge_length)
