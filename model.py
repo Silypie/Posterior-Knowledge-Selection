@@ -78,22 +78,27 @@ class KnowledgeEncoder(nn.Module):
              or (B, T), which is y (response)
         :return:
             encoded knowledge or encoded response in shape (B, N, 2*H)
+            if the length of knowledge is not 0, shape: (n_batch, N)
         '''
-        if len(K.shape) == 3:  # [n_batch, N, seq_len]
+        if len(K.shape) == 3:  # K: [n_batch, N, seq_len]
             n_batch = K.size(0)
             N = K.size(1)
             inputs = self.embedding(K)
             inputs = inputs.transpose(0, 1)  # [N, n_batch, seq_len, n_embed]
             encoded = torch.zeros(N, n_batch, 2*self.n_hidden)
+            knowledge_length = torch.ones(N, n_batch, dtype=bool)
             for i in range(N):
                 k = inputs[i].transpose(0, 1)  # [seq_len, n_batch, n_embed]
-                seq_lengths = torch.sum(K[:, i] > 0, dim=-1)
+                seq_lengths = torch.sum(K[:, i] > 0, dim=-1) # [n_batch]
+                length_isnot_zero = seq_lengths!=0  # [n_batch]
+                knowledge_length[i] = length_isnot_zero
                 packed_inputs = rnn.pack_padded_sequence(k, seq_lengths.cpu(), enforce_sorted=False)
                 _, hidden = self.gru(packed_inputs)  # hidden: [2*n_layer, n_batch, n_hidden]
                 hidden = hidden.view(self.n_layer, 2, n_batch, self.n_hidden)
                 f_hidden, b_hidden = hidden[-1]
                 encoded[i] = torch.cat((f_hidden, b_hidden), dim=1)  # encoded: [n_batch, 2*n_hidden]
-            return encoded.transpose(0, 1).cuda()  # [n_batch, N, 2*n_hidden]
+            # [n_batch, N, 2*n_hidden], [n_batch, N]
+            return encoded.transpose(0, 1).cuda(), knowledge_length.transpose(0, 1).cuda()
 
         else:  # [n_batch, seq_len]
             y = K[:, 1:]    # 不考虑<SOS>
@@ -118,7 +123,7 @@ class Manager(nn.Module):
         self.mlp = nn.Sequential(nn.Linear(4*n_hidden, 2*n_hidden))
         self.mlp_k = nn.Sequential(nn.Linear(2*n_hidden, n_vocab))
 
-    def forward(self, x, y, K):
+    def forward(self, x, y, K, knowledge_length):
         '''
         :param x:
             encoded utterance in shape (B, 2*H)
@@ -126,6 +131,8 @@ class Manager(nn.Module):
             encoded response in shape (B, 2*H) (optional)
         :param K:
             encoded knowledge in shape (B, N, 2*H)
+        :param knowledge_length:
+            if the length of knowledge is not 0, shape: (n_batch, N)
         :return:
             prior, posterior, selected knowledge, selected knowledge logits for BOW_loss
         '''
@@ -135,14 +142,24 @@ class Manager(nn.Module):
             K = K.transpose(-1, -2)  # K: [n_batch, 2*n_hidden, N]
             posterior_logits = torch.bmm(response.unsqueeze(1), K).squeeze(1)  # [n_batch, N]
             posterior = F.softmax(posterior_logits, dim=-1)
+
+            # 将长度为0的知识对应的值置为0，即不考虑
+            prior = torch.mul(prior, knowledge_length)
+            posterior_logits = torch.mul(posterior_logits, knowledge_length)
+            posterior = torch.mul(posterior, knowledge_length)
+
             k_idx = gumbel_softmax(posterior_logits, self.temperature)  # k_idx: [n_batch, N(one_hot)]
             k_i = torch.bmm(K, k_idx.unsqueeze(2)).squeeze(2)  # k_i: [n_batch, 2*n_hidden] 获取选择的知识的hidden
             k_logits = F.log_softmax(self.mlp_k(k_i), dim=-1)  # k_logits: [n_batch, n_vocab] 根据知识得到词的分布
+
             return prior, posterior, k_i, k_logits  # prior: [n_batch, N], posterior: [n_batch, N]
         else:   # 测试时
             n_batch = K.size(0)
             k_i = torch.Tensor(n_batch, 2*self.n_hidden).cuda() # 存储每个样本选择的知识的hidden
-            prior = torch.bmm(x.unsqueeze(1), K.transpose(-1, -2)).squeeze(1) # [n_batch, N]
+            prior = F.log_softmax(torch.bmm(x.unsqueeze(1), K.transpose(-1, -2)), dim=-1).squeeze(1) # [n_batch, N]
+            # 将长度为0的知识对应的值置为0，即不考虑
+            prior = torch.mul(prior, knowledge_length)
+
             k_idx = prior.max(1)[1].unsqueeze(1)  # k_idx: [n_batch, 1] 直接根据先验分布选择的知识索引
             for i in range(n_batch):
                 k_i[i] = K[i, k_idx[i]]  # 得到每个样本选择的知识的hidden

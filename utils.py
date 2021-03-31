@@ -116,21 +116,21 @@ def load_data(path, vocab):
     with open(path, errors="ignore") as file:
         datas = json.load(file)
         X = []
-        K = []
+        K = []  # 二维，[轮数, 知识数]
         y = []
 
-        for data in datas:
+        for data in datas:  #每个对话
             posts = data['posts']
             responses = data['responses']
-            knowledges = data['knowledge']
-
+            knowledges = data['knowledges']
+            # 每轮对话
             for i in range(len(posts)):
                 # 并没有考虑对话历史，只对每轮对话进行知识选择和回复生成
                 # ToDo：跟DiffKS一样可以只使用上一轮对话和当前轮的问题，拼接X：[x_t-1,y_t-1,x_t]
                 # 如果当前是一次对话的开始，那么X不用拼接，否则可以在这里修改拼接上一轮对话内容
                 X.append(posts[i])
                 y.append(responses[i])
-                K.append(knowledges[i])
+                K.append(knowledges[i]) # K的每个元素是一轮对话涉及到的所有知识
 
     # 将token转换为index
     X_ind = []
@@ -157,9 +157,9 @@ def load_data(path, vocab):
                 y_temp.append(vocab.stoi['<UNK>'])
         y_ind.append(y_temp)
 
-    for lines in K:
+    for lines in K: # 每轮的所有知识
         K_temp = []
-        for line in lines:
+        for line in lines:  # 每个知识
             k_temp = []
             tokens = nltk.word_tokenize(line)
             for word in tokens:
@@ -194,6 +194,7 @@ class WizardDataset(Dataset):
         X_len = max([len(line) for line in X])  # 最大的序列长度
         y_len = max([len(line) for line in y])
         k_len = 0
+        num_k = max([len(line) for line in K])  # 最多知识数
         for lines in K:
             for line in lines:
                 if k_len < len(line):
@@ -219,11 +220,15 @@ class WizardDataset(Dataset):
             src_y.append(src_line)
             tgt_y.append(tgt_line)
 
-        for lines in K:
+        for lines in K: # 每轮对话
             src_k = list()
-            for line in lines:
+            for line in lines: # 每个知识
                 line.extend([params.PAD] * (k_len - len(line)))
                 src_k.append(line)
+            gap = num_k - len(src_k)
+            knowledge_pad = [params.PAD] * k_len
+            for i in range(gap):
+                src_k.append(knowledge_pad)
             src_K.append(src_k)
 
         self.src_X = torch.LongTensor(src_X)

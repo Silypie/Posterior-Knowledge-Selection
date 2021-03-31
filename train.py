@@ -92,8 +92,8 @@ def train(model, optimizer, train_loader, args):
             encoder_outputs, hidden, x = encoder(src_X)
             encoder_mask = (src_X == 0)[:, :encoder_outputs.size(0)].unsqueeze(1).bool() # fix warning bug
             y = Kencoder(src_y)
-            K = Kencoder(src_K)
-            prior, posterior, k_i, k_logits = manager(x, y, K)
+            K, knowledge_length = Kencoder(src_K)
+            prior, posterior, k_i, k_logits = manager(x, y, K, knowledge_length)
             kldiv_loss = KLDLoss(prior, posterior.detach())
 
             n_vocab = params.n_vocab
@@ -169,6 +169,7 @@ def main():
         # save vocab
         with open('vocab.json', 'w') as fp:
             json.dump(vocab.stoi, fp)
+    print("successfully build vocab")
 
     train_X, train_y, train_K = load_data(train_path, vocab)
     train_loader = get_data_loader(train_X, train_y, train_K, n_batch)
