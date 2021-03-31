@@ -7,6 +7,7 @@ from copy import copy
 import torch.backends.cudnn as cudnn
 from collections import Counter
 import nltk
+import json
 
 
 def sample_gumbel(shape, eps=1e-20):
@@ -68,6 +69,8 @@ def save_models(model, filenames):
 
 def build_vocab(path, n_vocab):
     with open(path, errors="ignore") as file:
+        datas = json.load(file)
+
         word_counter = Counter()
         vocab = Vocabulary()
         # vocab = dict()
@@ -80,43 +83,25 @@ def build_vocab(path, n_vocab):
         initial_vocab_size = len(vocab.stoi)
         vocab_idx = initial_vocab_size
 
-        for line in file:
-            dialog_id = line.split()[0]
-            if dialog_id == "1":
-                count = 0
+        for data in datas:
+            posts = data['posts']
+            responses = data['responses']
+            knowledges = data['knowledge']
 
-            if "your persona:" in line:
-                if count == 3:
-                    continue
-                k_line = line.split("persona:")[1].strip("\n").lower()
-                tokens = nltk.word_tokenize(k_line)
-                count += 1
-
-                for word in tokens:
+            for i in range(len(posts)):
+                post_tokens = nltk.word_tokenize(posts[i])
+                response_tokens = nltk.word_tokenize(responses[i])
+                knowledge_tokens = []
+                for knowledge in knowledges[i]:
+                    k = nltk.word_tokenize(knowledge)
+                    knowledge_tokens = knowledge_tokens + k
+                    
+                for word in post_tokens + response_tokens + knowledge_tokens:
                     if word in vocab.itos:
                         word_counter[word] += 1
                     else:
                         word_counter[word] = 1
-
-            elif "__SILENCE__" not in line:
-                X_line = " ".join(line.split("\t")[0].split()[1:]).lower()
-                tokens = nltk.word_tokenize(X_line)
-
-                for word in tokens:
-                    if word in vocab.itos:
-                        word_counter[word] += 1
-                    else:
-                        word_counter[word] = 1
-
-                y_line = line.split("\t")[1].strip("\n").lower()
-                tokens = nltk.word_tokenize(y_line)
-
-                for word in tokens:
-                    if word in vocab.itos:
-                        word_counter[word] += 1
-                    else:
-                        word_counter[word] = 1
-
+            
         for key, _ in word_counter.most_common(n_vocab - initial_vocab_size):
             vocab.stoi[key] = vocab_idx
             vocab_idx += 1
@@ -129,31 +114,23 @@ def build_vocab(path, n_vocab):
 
 def load_data(path, vocab):
     with open(path, errors="ignore") as file:
+        datas = json.load(file)
         X = []
         K = []
         y = []
-        k = []
 
-        for line in file:
-            dialog_id = line.split()[0]
-            if dialog_id == "1":
-                k = []  # 新的一轮对话
+        for data in datas:
+            posts = data['posts']
+            responses = data['responses']
+            knowledges = data['knowledge']
 
-            if "your persona:" in line:
-                if len(k) == 3: # ToDo：最多只考虑3条知识
-                    continue
-                k_line = line.split("persona:")[1].strip("\n").lower()
-                k.append(k_line)
-
-            elif "__SILENCE__" not in line:
-                # 在这里，对于每轮对话，由于共用同样一些知识，所以每轮对话都直接append之前收集到的知识进行复制
-                K.append(k)
-                X_line = " ".join(line.split("\t")[0].split()[1:]).lower()
-                y_line = line.split("\t")[1].strip("\n").lower()
+            for i in range(len(posts)):
                 # 并没有考虑对话历史，只对每轮对话进行知识选择和回复生成
                 # ToDo：跟DiffKS一样可以只使用上一轮对话和当前轮的问题，拼接X：[x_t-1,y_t-1,x_t]
-                X.append(X_line)
-                y.append(y_line)
+                # 如果当前是一次对话的开始，那么X不用拼接，否则可以在这里修改拼接上一轮对话内容
+                X.append(posts[i])
+                y.append(responses[i])
+                K.append(knowledges[i])
 
     # 将token转换为index
     X_ind = []
@@ -197,7 +174,7 @@ def load_data(path, vocab):
 
 
 def get_data_loader(X, y, K, n_batch):
-    dataset = PersonaDataset(X, y, K)
+    dataset = WizardDataset(X, y, K)
     data_loader = DataLoader(
         dataset=dataset,
         batch_size=n_batch,
@@ -212,7 +189,7 @@ class Vocabulary:
         self.stoi = dict()
 
 
-class PersonaDataset(Dataset):
+class WizardDataset(Dataset):
     def __init__(self, X, y, K):
         X_len = max([len(line) for line in X])  # 最大的序列长度
         y_len = max([len(line) for line in y])

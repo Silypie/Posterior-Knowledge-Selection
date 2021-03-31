@@ -9,7 +9,7 @@ n_hidden = 800
 n_embed = 300
 temperature = 0.8
 
-train_path = "data/train_self_original_no_cands.txt"
+train_path = "data/prepared_data/test_seen.json"
 test_path = "data/valid_self_original_no_cands.txt"
 
 model_root = "snapshots"
