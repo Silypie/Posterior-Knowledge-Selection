@@ -86,7 +86,7 @@ def build_vocab(path, n_vocab):
         for data in datas:
             posts = data['posts']
             responses = data['responses']
-            knowledges = data['knowledge']
+            knowledges = data['knowledges']
 
             for i in range(len(posts)):
                 post_tokens = nltk.word_tokenize(posts[i])
