@@ -9,10 +9,10 @@ from collections import Counter
 import nltk
 import json
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 
 def sample_gumbel(shape, eps=1e-20):
-    U = torch.rand(shape).to(device)
+    U = torch.rand(shape).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
     return -torch.log(-torch.log(U + eps) + eps)
 
 
@@ -45,7 +45,7 @@ def init_model(net, restore=None):
     # check if cuda is available
     if torch.cuda.is_available():
         cudnn.benchmark = True
-        net.to(device)
+        net.to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
     return net
 
 
@@ -69,7 +69,7 @@ def save_models(model, filenames):
 
 
 def build_vocab(path, n_vocab):
-    with open(path, errors="ignore") as file:
+    with open(path, errors="ignore", encoding='utf-8') as file:
         datas = json.load(file)
 
         word_counter = Counter()
@@ -113,8 +113,15 @@ def build_vocab(path, n_vocab):
     return vocab
 
 
-def load_data(path, vocab):
-    with open(path, errors="ignore") as file:
+def load_data(path, vocab, samples_path):
+    if not os.path.exists(samples_path):
+        os.mkdir(samples_path)
+    # 如果样本目录中存在样本，说明之前处理好了，直接返回
+    samples_paths = os.listdir(samples_path)
+    if len(samples_paths) != 0:
+        return
+
+    with open(path, errors="ignore", encoding='utf-8') as file:
         datas = json.load(file)
         X = []
         K = []  # 二维，[轮数, 知识数]
@@ -170,16 +177,73 @@ def load_data(path, vocab):
                     k_temp.append(vocab.stoi['<UNK>'])
             K_temp.append(k_temp)
         K_ind.append(K_temp)    #二维张量：[轮数, 知识数]
+    
+    # 在这里进行对齐操作
+    X_len = max([len(line) for line in X_ind])  # 最大的序列长度
+    y_len = max([len(line) for line in y_ind])
+    k_len = 100 # 对过长的知识截断（最长有两万多...）
+    num_k = max([len(line) for line in K_ind])  # 最多知识数
+    # for lines in K_ind:
+    #     for line in lines:
+    #         if k_len < len(line):
+    #             k_len = len(line)
 
-    return X_ind, y_ind, K_ind
+    src_X = list()
+    src_y = list()
+    src_K = list()
+    tgt_y = list()
+
+    # 所有样本进行对齐操作
+    for line in X_ind:
+        line.extend([params.PAD] * (X_len - len(line)))
+        src_X.append(line)
+    for line in y_ind:
+        src_line = copy(line)
+        tgt_line = copy(line)
+        src_line.insert(0, params.SOS)
+        tgt_line.append(params.EOS)
+        src_line.extend([params.PAD] * (y_len - len(src_line) + 1))
+        tgt_line.extend([params.PAD] * (y_len - len(tgt_line) + 1))
+        src_y.append(src_line)
+        tgt_y.append(tgt_line)
+    for lines in K_ind: # 每轮对话
+        src_k = list()
+        for line in lines: # 每个知识
+            if len(line) < k_len:
+                line.extend([params.PAD] * (k_len - len(line)))
+            elif len(line) > k_len:
+                line = line[:k_len]
+            src_k.append(line)
+        # 对齐知识数
+        gap = num_k - len(src_k)
+        knowledge_pad = [params.EOS] * k_len
+        for i in range(gap):
+            src_k.append(knowledge_pad)
+        src_K.append(src_k)
+    
+    # 将处理好的结果按样本分割成多个文件保存，以防重复计算和占用过多内存
+    for i in range(len(src_X)):
+        with open(samples_path+"%d.txt"%i,"w",encoding = "utf-8") as fout:
+            # 第一行：src_x \t src_y \t tgt_y \n
+            out_line = ' '.join([str(x) for x in src_X[i]]) + '\t' + ' '.join([str(y) for y in src_y[i]]) + ' '.join([str(y) for y in src_y[i]])
+            fout.write(out_line+"\n")
+            # 第二行：k1 \t ... \t kn
+            out_line = ''
+            for j in range(len(src_K[i])):
+                out_line = out_line + ' '.join([str(k) for k in src_K[i][j]])
+            fout.write(out_line)
+
+    # 不用返回任何东西，样本目录是已知的
+    # return X_ind, y_ind, K_ind
 
 
-def get_data_loader(X, y, K, n_batch):
-    dataset = WizardDataset(X, y, K)
+def get_data_loader(samples_path, n_batch, shuffle):
+    dataset = WizardDataset(samples_path)
     data_loader = DataLoader(
         dataset=dataset,
         batch_size=n_batch,
-        shuffle=True
+        shuffle=shuffle,
+        num_workers=2
     )
     return data_loader
 
@@ -191,62 +255,31 @@ class Vocabulary:
 
 
 class WizardDataset(Dataset):
-    def __init__(self, X, y, K):
-        X_len = max([len(line) for line in X])  # 最大的序列长度
-        y_len = max([len(line) for line in y])
-        k_len = 0
-        num_k = max([len(line) for line in K])  # 最多知识数
-        for lines in K:
-            for line in lines:
-                if k_len < len(line):
-                    k_len = len(line)
-
-        src_X = list()
-        src_y = list()
-        src_K = list()
-        tgt_y = list()
-
-        # 所有样本进行对齐操作
-        for line in X:
-            line.extend([params.PAD] * (X_len - len(line)))
-            src_X.append(line)
-
-        for line in y:
-            src_line = copy(line)
-            tgt_line = copy(line)
-            src_line.insert(0, params.SOS)
-            tgt_line.append(params.EOS)
-            src_line.extend([params.PAD] * (y_len - len(src_line) + 1))
-            tgt_line.extend([params.PAD] * (y_len - len(tgt_line) + 1))
-            src_y.append(src_line)
-            tgt_y.append(tgt_line)
-
-        for lines in K: # 每轮对话
-            src_k = list()
-            for line in lines: # 每个知识
-                line.extend([params.PAD] * (k_len - len(line)))
-                src_k.append(line)
-            gap = num_k - len(src_k)
-            knowledge_pad = [params.EOS] * k_len
-            for i in range(gap):
-                src_k.append(knowledge_pad)
-            src_K.append(src_k)
-
-        self.src_X = torch.LongTensor(src_X)
-        self.src_y = torch.LongTensor(src_y)
-        self.src_K = torch.LongTensor(src_K)
-        self.tgt_y = torch.LongTensor(tgt_y)
-        self.dataset_size = len(self.src_X)
+    def __init__(self, samples_path):
+        self.samples_path = samples_path
+        self.samples_paths = os.listdir(samples_path)
 
     def __getitem__(self, index):
-        src_X = self.src_X[index]
-        src_y = self.src_y[index]
-        tgt_y = self.tgt_y[index]
-        src_K = self.src_K[index]
-        return src_X, src_y, src_K, tgt_y
+        # 在这里再从磁盘读取具体的某个样本内容，而不是一次性加载全部数据
+        path = self.samples_path + self.samples_paths[index]
+        with open(path,"r",encoding = "utf-8") as f:
+            line_1 = f.readline()
+            src_x, src_y, tgt_y = line_1.split('\t')
+            src_x = torch.LongTensor([int(x) for x in src_x.split(" ")])
+            src_y = torch.LongTensor([int(y) for y in src_y.split(" ")])
+            tgt_y = torch.LongTensor([int(y) for y in tgt_y.split(" ")])
+
+            line_2 = f.readline()
+            knowledges = line_2.split('\t')
+            src_K = torch.ones(len(knowledges),100,dtype=int)
+            for i in range(len(knowledges)):
+                src_k = torch.LongTensor([int(k) for k in knowledges[i].split(" ")])
+                src_K[i] = src_k
+
+        return src_x, src_y, src_K, tgt_y
 
     def __len__(self):
-        return self.dataset_size
+        return len(self.samples_paths)
 
 
 def knowledgeToIndex(K, vocab):
@@ -286,5 +319,5 @@ def knowledgeToIndex(K, vocab):
     K1 = torch.LongTensor(K1).unsqueeze(0)
     K2 = torch.LongTensor(K2).unsqueeze(0)
     K3 = torch.LongTensor(K3).unsqueeze(0)
-    K = torch.cat((K1, K2, K3), dim=0).unsqueeze(0).to(device)  # K: [1, 3, seq_len]
+    K = torch.cat((K1, K2, K3), dim=0).unsqueeze(0).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))  # K: [1, 3, seq_len]
     return K

@@ -10,6 +10,8 @@ n_embed = 300
 temperature = 0.8
 
 train_path = "data/prepared_data/test_seen.json"
+train_samples_path = "data/prepared_data/train_samples/"
+
 test_path = "data/valid_self_original_no_cands.txt"
 
 model_root = "snapshots"

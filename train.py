@@ -12,6 +12,7 @@ from utils import init_model, save_models, \
 from model import Encoder, KnowledgeEncoder, Decoder, Manager
 
 
+
 def parse_arguments():
     p = argparse.ArgumentParser(description='Hyperparams')
     p.add_argument('-pre_epoch', type=int, default=5,
@@ -41,9 +42,9 @@ def pre_train(model, optimizer, train_loader, args):
     for epoch in range(args.pre_epoch):
         b_loss = 0
         for step, (src_X, src_y, src_K, _) in enumerate(train_loader):
-            src_X = src_X.to(device)
-            src_y = src_y.to(device)
-            src_K = src_K.to(device)
+            src_X = src_X.to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+            src_y = src_y.to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+            src_K = src_K.to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
 
             optimizer.zero_grad()
             _, _, x = encoder(src_X)
@@ -83,10 +84,10 @@ def train(model, optimizer, train_loader, args):
         n_loss = 0
         t_loss = 0
         for step, (src_X, src_y, src_K, tgt_y) in enumerate(train_loader):
-            src_X = src_X.to(device)
-            src_y = src_y.to(device)
-            src_K = src_K.to(device)
-            tgt_y = tgt_y.to(device)
+            src_X = src_X.to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+            src_y = src_y.to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+            src_K = src_K.to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+            tgt_y = tgt_y.to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
 
             optimizer.zero_grad()
             encoder_outputs, hidden, x = encoder(src_X)
@@ -104,9 +105,9 @@ def train(model, optimizer, train_loader, args):
             n_batch = src_X.size(0)
             max_len = tgt_y.size(1)
 
-            outputs = torch.zeros(max_len, n_batch, n_vocab).to(device)
+            outputs = torch.zeros(max_len, n_batch, n_vocab).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
             hidden = hidden[params.n_layer:]
-            output = torch.LongTensor([params.SOS] * n_batch).to(device)  # [n_batch]
+            output = torch.LongTensor([params.SOS] * n_batch).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))  # [n_batch]
             for t in range(max_len):
                 output, hidden, attn_weights = decoder(output, k_i, hidden, encoder_outputs, encoder_mask)
                 outputs[t] = output
@@ -153,7 +154,6 @@ def main():
     n_batch = args.n_batch
     temperature = params.temperature
     train_path = params.train_path
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     print("loading_data...")
     # 训练时加载处理好的词典（如果有的话）
@@ -171,24 +171,30 @@ def main():
             json.dump(vocab.stoi, fp)
     print("successfully build vocab")
 
-    train_X, train_y, train_K = load_data(train_path, vocab)
-    train_loader = get_data_loader(train_X, train_y, train_K, n_batch)
+    load_data(train_path, vocab, params.train_samples_path)
+    train_loader = get_data_loader(params.train_samples_path, n_batch, shuffle=True)
     print("successfully loaded")
 
-    encoder = Encoder(n_vocab, n_embed, n_hidden, n_layer, vocab).to(device)
-    Kencoder = KnowledgeEncoder(n_vocab, n_embed, n_hidden, n_layer, vocab).to(device)
-    manager = Manager(n_hidden, n_vocab, temperature).to(device)
-    decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer, vocab).to(device)
+    encoder = Encoder(n_vocab, n_embed, n_hidden, n_layer, vocab).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+    Kencoder = KnowledgeEncoder(n_vocab, n_embed, n_hidden, n_layer, vocab).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+    manager = Manager(n_hidden, n_vocab, temperature).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+    decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer, vocab).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
 
     if args.restore:
         encoder = init_model(encoder, restore=params.encoder_restore)
         Kencoder = init_model(Kencoder, restore=params.Kencoder_restore)
         manager = init_model(manager, restore=params.manager_restore)
         decoder = init_model(decoder, restore=params.decoder_restore)
+        print('init model with saved parameter')
     
-    # ToDo：目前的代码所有的embedding都是独立的，可以参考transformer源码使用直接赋值的方法共享参数：
+    # 目前的代码所有的embedding都是独立的，可以参考transformer源码使用直接赋值的方法共享参数：
     #if emb_src_trg_weight_sharing:
     #   self.encoder.src_word_emb.weight = self.decoder.trg_word_emb.weight
+    # encoder.embedding.weight = Kencoder.embedding.weight = decoder.embedding.weight
+    Kencoder.embedding.weight = encoder.embedding.weight
+    print("Kencoder embedding is initialized with Encoder embedding")
+    decoder.embedding.weight = encoder.embedding.weight
+    print("decoder embedding is initialized with Encoder embedding")
 
     model = [encoder, Kencoder, manager, decoder]
     parameters = list(encoder.parameters()) + list(Kencoder.parameters()) + \

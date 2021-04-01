@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from torchnlp.word_to_vector import GloVe
 from utils import gumbel_softmax
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 
 
 class Encoder(nn.Module):
@@ -60,16 +60,17 @@ class KnowledgeEncoder(nn.Module):
         self.n_embed = n_embed
         self.n_hidden = n_hidden
         self.n_layer = n_layer
-        if vocab is None:
-            self.embedding = nn.Embedding(n_vocab, n_embed)
-        else:
-            embedding = torch.Tensor(n_vocab, n_embed)
-            vectors = GloVe()
-            for word in vocab.stoi:
-                if word in vectors:
-                    embedding[vocab.stoi[word]] = vectors[word]
-            self.embedding = nn.Embedding.from_pretrained(embedding)
-            print("Kencoder embedding is initialized with Glove")
+        self.embedding = nn.Embedding(n_vocab, n_embed)
+        # if vocab is None:
+        #     self.embedding = nn.Embedding(n_vocab, n_embed)
+        # else:
+        #     embedding = torch.Tensor(n_vocab, n_embed)
+        #     vectors = GloVe()
+        #     for word in vocab.stoi:
+        #         if word in vectors:
+        #             embedding[vocab.stoi[word]] = vectors[word]
+        #     self.embedding = nn.Embedding.from_pretrained(embedding)
+        #     print("Kencoder embedding is initialized with Glove")
         self.gru = nn.GRU(input_size=n_embed, hidden_size=n_hidden,
                           num_layers=n_layer, bidirectional=True)
 
@@ -100,7 +101,7 @@ class KnowledgeEncoder(nn.Module):
                 f_hidden, b_hidden = hidden[-1]
                 encoded[i] = torch.cat((f_hidden, b_hidden), dim=1)  # encoded: [n_batch, 2*n_hidden]
             # [n_batch, N, 2*n_hidden], [n_batch, N]
-            return encoded.transpose(0, 1).to(device), knowledge_length.transpose(0, 1).to(device)
+            return encoded.transpose(0, 1).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu")), knowledge_length.transpose(0, 1).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
 
         else:  # [n_batch, seq_len]
             y = K[:, 1:]    # 不考虑<SOS>
@@ -157,7 +158,7 @@ class Manager(nn.Module):
             return prior, posterior, k_i, k_logits  # prior: [n_batch, N], posterior: [n_batch, N]
         else:   # 测试时
             n_batch = K.size(0)
-            k_i = torch.Tensor(n_batch, 2*self.n_hidden).to(device) # 存储每个样本选择的知识的hidden
+            k_i = torch.Tensor(n_batch, 2*self.n_hidden).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu")) # 存储每个样本选择的知识的hidden
             prior = F.log_softmax(torch.bmm(x.unsqueeze(1), K.transpose(-1, -2)), dim=-1).squeeze(1) # [n_batch, N]
             # 将长度为0的知识对应的值置为0，即不考虑
             prior = torch.mul(prior, knowledge_length)
@@ -203,16 +204,17 @@ class Decoder(nn.Module):  # Hierarchical Gated Fusion Unit
         self.n_embed = n_embed
         self.n_hidden = n_hidden
         self.n_layer = n_layer
-        if vocab is None:
-            self.embedding = nn.Embedding(n_vocab, n_embed)
-        else:
-            embedding = torch.Tensor(n_vocab, n_embed)
-            vectors = GloVe()
-            for word in vocab.stoi:
-                if word in vectors:
-                    embedding[vocab.stoi[word]] = vectors[word]
-            self.embedding = nn.Embedding.from_pretrained(embedding)
-            print("decoder embedding is initialized with Glove")
+        self.embedding = nn.Embedding(n_vocab, n_embed)
+        # if vocab is None:
+        #     self.embedding = nn.Embedding(n_vocab, n_embed)
+        # else:
+        #     embedding = torch.Tensor(n_vocab, n_embed)
+        #     vectors = GloVe()
+        #     for word in vocab.stoi:
+        #         if word in vectors:
+        #             embedding[vocab.stoi[word]] = vectors[word]
+        #     self.embedding = nn.Embedding.from_pretrained(embedding)
+        #     print("decoder embedding is initialized with Glove")
         self.attention = Attention(n_hidden)
         self.y_weight = nn.Linear(n_hidden, n_hidden)
         self.k_weight = nn.Linear(n_hidden, n_hidden)
