@@ -15,9 +15,10 @@ train_samples_path = "data/prepared_data/train_samples/"
 test_path = "data/valid_self_original_no_cands.txt"
 
 model_root = "snapshots"
+emlayer_restore = "snapshots/PostKS-emlayer.pt"
 encoder_restore = "snapshots/PostKS-encoder.pt"
 Kencoder_restore = "snapshots/PostKS-Kencoder.pt"
 manager_restore = "snapshots/PostKS-manager.pt"
 decoder_restore = "snapshots/PostKS-decoder.pt"
-all_restore=[encoder_restore, Kencoder_restore, manager_restore, decoder_restore]
+all_restore=[emlayer_restore ,encoder_restore, Kencoder_restore, manager_restore, decoder_restore]
 

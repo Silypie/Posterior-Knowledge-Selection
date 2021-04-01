@@ -9,7 +9,7 @@ from torch.nn.utils import clip_grad_norm_
 import params
 from utils import init_model, save_models, \
     build_vocab, load_data, get_data_loader, Vocabulary
-from model import Encoder, KnowledgeEncoder, Decoder, Manager
+from model import EmbeddingLayer, Encoder, KnowledgeEncoder, Decoder, Manager
 
 
 
@@ -33,9 +33,9 @@ def parse_arguments():
 
 
 def pre_train(model, optimizer, train_loader, args):
-    encoder, Kencoder, manager, decoder = [*model]
-    encoder.train(), Kencoder.train(), manager.train(), decoder.train()
-    parameters = list(encoder.parameters()) + list(Kencoder.parameters()) + \
+    emlayer, encoder, Kencoder, manager, decoder = [*model]
+    emlayer.train(), encoder.train(), Kencoder.train(), manager.train(), decoder.train()
+    parameters = list(emlayer.parameters()) + list(encoder.parameters()) + list(Kencoder.parameters()) + \
                  list(manager.parameters())
     NLLLoss = nn.NLLLoss(reduction='mean', ignore_index=params.PAD)
 
@@ -71,9 +71,9 @@ def pre_train(model, optimizer, train_loader, args):
 
 
 def train(model, optimizer, train_loader, args):
-    encoder, Kencoder, manager, decoder = [*model]
-    encoder.train(), Kencoder.train(), manager.train(), decoder.train()
-    parameters = list(encoder.parameters()) + list(Kencoder.parameters()) + \
+    emlayer, encoder, Kencoder, manager, decoder = [*model]
+    emlayer.train(), encoder.train(), Kencoder.train(), manager.train(), decoder.train()
+    parameters = list(emlayer.parameters()) + list(encoder.parameters()) + list(Kencoder.parameters()) + \
                  list(manager.parameters()) + list(decoder.parameters())
     NLLLoss = nn.NLLLoss(reduction='mean', ignore_index=params.PAD)
     KLDLoss = nn.KLDivLoss(reduction='batchmean')
@@ -175,10 +175,11 @@ def main():
     train_loader = get_data_loader(params.train_samples_path, n_batch, shuffle=True)
     print("successfully loaded")
 
-    encoder = Encoder(n_vocab, n_embed, n_hidden, n_layer, vocab).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
-    Kencoder = KnowledgeEncoder(n_vocab, n_embed, n_hidden, n_layer, vocab).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+    emlayer = EmbeddingLayer(n_vocab, n_embed, vocab)
+    encoder = Encoder(n_vocab, n_embed, n_hidden, n_layer, vocab, emlayer).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+    Kencoder = KnowledgeEncoder(n_vocab, n_embed, n_hidden, n_layer, vocab, emlayer).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
     manager = Manager(n_hidden, n_vocab, temperature).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
-    decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer, vocab).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+    decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer, vocab, emlayer).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
 
     if args.restore:
         encoder = init_model(encoder, restore=params.encoder_restore)
@@ -191,15 +192,15 @@ def main():
     #if emb_src_trg_weight_sharing:
     #   self.encoder.src_word_emb.weight = self.decoder.trg_word_emb.weight
     # encoder.embedding.weight = Kencoder.embedding.weight = decoder.embedding.weight
-    Kencoder.embedding.weight = encoder.embedding.weight
-    print("Kencoder embedding is initialized with Encoder embedding")
-    decoder.embedding.weight = encoder.embedding.weight
-    print("decoder embedding is initialized with Encoder embedding")
+    # Kencoder.embedding.weight = encoder.embedding.weight
+    # print("Kencoder embedding is initialized with Encoder embedding")
+    # decoder.embedding.weight = encoder.embedding.weight
+    # print("decoder embedding is initialized with Encoder embedding")
 
-    model = [encoder, Kencoder, manager, decoder]
+    model = [emlayer, encoder, Kencoder, manager, decoder]
     parameters = list(encoder.parameters()) + list(Kencoder.parameters()) + \
                  list(manager.parameters()) + list(decoder.parameters())
-    optimizer = optim.Adam(parameters, lr=args.lr)
+    optimizer = optim.Adam(set(parameters), lr=args.lr)
 
     # pre_train knowledge manager
     print("start pre-training")

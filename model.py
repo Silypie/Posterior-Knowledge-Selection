@@ -6,16 +6,9 @@ import torch.nn.functional as F
 from torchnlp.word_to_vector import GloVe
 from utils import gumbel_softmax
 
-
-
-
-class Encoder(nn.Module):
-    def __init__(self, n_vocab, n_embed, n_hidden, n_layer, vocab=None):
-        super(Encoder, self).__init__()
-        self.n_vocab = n_vocab
-        self.n_embed = n_embed
-        self.n_hidden = n_hidden
-        self.n_layer = n_layer
+class EmbeddingLayer(nn.Module):
+    def __init__(self, n_vocab, n_embed, vocab=None):
+        super(EmbeddingLayer, self).__init__()
         if vocab is None:
             self.embedding = nn.Embedding(n_vocab, n_embed)
         else:
@@ -25,7 +18,28 @@ class Encoder(nn.Module):
                 if word in vectors:
                     embedding[vocab.stoi[word]] = vectors[word]
             self.embedding = nn.Embedding.from_pretrained(embedding)
-            print("encoder embedding is initialized with Glove")
+    def forward(self, input):
+        return self.embedding(input)
+
+
+class Encoder(nn.Module):
+    def __init__(self, n_vocab, n_embed, n_hidden, n_layer, vocab=None, emlayer=None):
+        super(Encoder, self).__init__()
+        self.n_vocab = n_vocab
+        self.n_embed = n_embed
+        self.n_hidden = n_hidden
+        self.n_layer = n_layer
+        self.embedding = emlayer
+        # if vocab is None:
+        #     self.embedding = nn.Embedding(n_vocab, n_embed)
+        # else:
+        #     embedding = torch.Tensor(n_vocab, n_embed)
+        #     vectors = GloVe()
+        #     for word in vocab.stoi:
+        #         if word in vectors:
+        #             embedding[vocab.stoi[word]] = vectors[word]
+        #     self.embedding = nn.Embedding.from_pretrained(embedding)
+        #     print("encoder embedding is initialized with Glove")
         self.gru = nn.GRU(input_size=n_embed, hidden_size=n_hidden,
                           num_layers=n_layer, bidirectional=True)
 
@@ -54,13 +68,13 @@ class Encoder(nn.Module):
 
 
 class KnowledgeEncoder(nn.Module):
-    def __init__(self, n_vocab, n_embed, n_hidden, n_layer, vocab=None):
+    def __init__(self, n_vocab, n_embed, n_hidden, n_layer, vocab=None, emlayer=None):
         super(KnowledgeEncoder, self).__init__()
         self.n_vocab = n_vocab
         self.n_embed = n_embed
         self.n_hidden = n_hidden
         self.n_layer = n_layer
-        self.embedding = nn.Embedding(n_vocab, n_embed)
+        self.embedding = emlayer
         # if vocab is None:
         #     self.embedding = nn.Embedding(n_vocab, n_embed)
         # else:
@@ -198,13 +212,13 @@ class Attention(nn.Module):
 
 
 class Decoder(nn.Module):  # Hierarchical Gated Fusion Unit
-    def __init__(self, n_vocab, n_embed, n_hidden, n_layer, vocab=None):
+    def __init__(self, n_vocab, n_embed, n_hidden, n_layer, vocab=None, emlayer=None):
         super(Decoder, self).__init__()
         self.n_vocab = n_vocab
         self.n_embed = n_embed
         self.n_hidden = n_hidden
         self.n_layer = n_layer
-        self.embedding = nn.Embedding(n_vocab, n_embed)
+        self.embedding = emlayer
         # if vocab is None:
         #     self.embedding = nn.Embedding(n_vocab, n_embed)
         # else:
