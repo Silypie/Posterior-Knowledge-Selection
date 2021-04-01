@@ -61,16 +61,12 @@ def pre_train(model, optimizer, train_loader, args, device):
             optimizer.step()
             b_loss += bow_loss.item()
 
-            print("Epoch [%.1d/%.1d] Step [%.4d/%.4d]: bow_loss=%.4f" % (epoch + 1, args.pre_epoch,
+            if (step + 1) % 50 == 0:
+                b_loss /= 50
+                print("Epoch [%.1d/%.1d] Step [%.4d/%.4d]: bow_loss=%.4f" % (epoch + 1, args.pre_epoch,
                                                                              step + 1, len(train_loader),
                                                                              b_loss))
-            b_loss = 0
-            # if (step + 1) % 50 == 0:
-            #     b_loss /= 50
-            #     print("Epoch [%.1d/%.1d] Step [%.4d/%.4d]: bow_loss=%.4f" % (epoch + 1, args.pre_epoch,
-            #                                                                  step + 1, len(train_loader),
-            #                                                                  b_loss))
-            #     b_loss = 0
+                b_loss = 0
         # save models
         save_models(model, params.all_restore)
 
