@@ -15,6 +15,9 @@ For decoder, I apply Hierarchical Gated Fusion Unit (HGFU) [[Yao et al. 2017](ht
 - nltk.download('punkt')
 
 <br><br>
+#### 对于这样解耦的模型不好使用DataParallel
+
+<br><br>
 ## Train model
 #### If you run train, vocab.json and trained parameters will be saved. Then you can play demo.
 ```
