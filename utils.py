@@ -225,14 +225,15 @@ def load_data(path, vocab, samples_path):
     for i in range(len(src_X)):
         with open(samples_path+"%d.txt"%i,"w",encoding = "utf-8") as fout:
             # 第一行：src_x \t src_y \t tgt_y \n
-            out_line = ' '.join([str(x) for x in src_X[i]]) + '\t' + ' '.join([str(y) for y in src_y[i]]) + ' '.join([str(y) for y in src_y[i]])
+            out_line = ' '.join([str(x) for x in src_X[i]]) + '\t' + ' '.join([str(y) for y in src_y[i]]) + '\t' + ' '.join([str(y) for y in src_y[i]])
             fout.write(out_line+"\n")
             # 第二行：k1 \t ... \t kn
             out_line = ''
             for j in range(len(src_K[i])):
-                out_line = out_line + ' '.join([str(k) for k in src_K[i][j]])
+                out_line = out_line + ' '.join([str(k) for k in src_K[i][j]]) + '\t'
             fout.write(out_line)
 
+    print("successfully store samples")
     # 不用返回任何东西，样本目录是已知的
     # return X_ind, y_ind, K_ind
 
@@ -270,7 +271,7 @@ class WizardDataset(Dataset):
             tgt_y = torch.LongTensor([int(y) for y in tgt_y.split(" ")])
 
             line_2 = f.readline()
-            knowledges = line_2.split('\t')
+            knowledges = line_2.split('\t')[:-1]
             src_K = torch.ones(len(knowledges),100,dtype=int)
             for i in range(len(knowledges)):
                 src_k = torch.LongTensor([int(k) for k in knowledges[i].split(" ")])
