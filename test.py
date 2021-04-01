@@ -5,7 +5,7 @@ import torch.nn as nn
 import params
 import argparse
 from utils import init_model, Vocabulary, build_vocab, load_data, get_data_loader
-from model import Encoder, KnowledgeEncoder, Decoder, Manager
+from model import EmbeddingLayer, Encoder, KnowledgeEncoder, Decoder, Manager
 
 
 def parse_arguments():
@@ -15,16 +15,16 @@ def parse_arguments():
     return p.parse_args()
 
 
-def evaluate(model, test_loader):
+def evaluate(model, test_loader, device):
     encoder, Kencoder, manager, decoder = [*model]
     encoder.eval(), Kencoder.eval(), manager.eval(), decoder.eval()
     NLLLoss = nn.NLLLoss(reduction='mean', ignore_index=params.PAD)
     total_loss = 0
 
     for step, (src_X, _, src_K, tgt_y) in enumerate(test_loader):
-        src_X = src_X.to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
-        src_K = src_K.to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
-        tgt_y = tgt_y.to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+        src_X = src_X.to(device)
+        src_K = src_K.to(device)
+        tgt_y = tgt_y.to(device)
 
         encoder_outputs, hidden, x = encoder(src_X)
         # 每个批次的最长序列长度不一定等于数据集中的最长序列长度
@@ -35,9 +35,9 @@ def evaluate(model, test_loader):
         max_len = tgt_y.size(1)
         n_vocab = params.n_vocab
 
-        outputs = torch.zeros(max_len, n_batch, n_vocab).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+        outputs = torch.zeros(max_len, n_batch, n_vocab).to(device)
         hidden = hidden[params.n_layer:]
-        output = torch.LongTensor([params.SOS] * n_batch).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))  # [n_batch]
+        output = torch.LongTensor([params.SOS] * n_batch).to(device)  # [n_batch]
         for t in range(max_len):
             output, hidden, attn_weights = decoder(output, k_i, hidden, encoder_outputs, encoder_mask)
             outputs[t] = output
@@ -60,7 +60,7 @@ def main():
     n_batch = args.n_batch
     temperature = params.temperature
     test_path = params.test_path
-    
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     print("loading_data...")
 
@@ -79,19 +79,21 @@ def main():
     test_loader = get_data_loader(test_X, test_y, test_K, n_batch)
     print("successfully loaded")
 
-    encoder = Encoder(n_vocab, n_embed, n_hidden, n_layer).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
-    Kencoder = KnowledgeEncoder(n_vocab, n_embed, n_hidden, n_layer).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
-    manager = Manager(n_hidden, n_vocab, temperature).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
-    decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+    emlayer = EmbeddingLayer(n_vocab, n_embed, vocab).to(device)
+    encoder = Encoder(n_vocab, n_embed, n_hidden, n_layer).to(device)
+    Kencoder = KnowledgeEncoder(n_vocab, n_embed, n_hidden, n_layer).to(device)
+    manager = Manager(n_hidden, n_vocab, temperature).to(device)
+    decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer).to(device)
 
-    encoder = init_model(encoder, restore=params.encoder_restore)
-    Kencoder = init_model(Kencoder, restore=params.Kencoder_restore)
-    manager = init_model(manager, restore=params.manager_restore)
-    decoder = init_model(decoder, restore=params.decoder_restore)
+    emlayer = init_model(emlayer, device, restore=params.emlayer_restore)
+    encoder = init_model(encoder, device, restore=params.encoder_restore)
+    Kencoder = init_model(Kencoder, device, restore=params.Kencoder_restore)
+    manager = init_model(manager, device, restore=params.manager_restore)
+    decoder = init_model(decoder, device, restore=params.decoder_restore)
 
     model = [encoder, Kencoder, manager, decoder]
     print("start evaluating")
-    evaluate(model, test_loader)
+    evaluate(model, test_loader, device)
 
 
 if __name__ == "__main__":

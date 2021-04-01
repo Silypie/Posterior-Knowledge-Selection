@@ -11,22 +11,22 @@ import json
 
 
 
-def sample_gumbel(shape, eps=1e-20):
-    U = torch.rand(shape).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+def sample_gumbel(shape, device, eps=1e-20):
+    U = torch.rand(shape).to(device)
     return -torch.log(-torch.log(U + eps) + eps)
 
 
-def gumbel_softmax_sample(logits, temperature):
-    y = logits + sample_gumbel(logits.size())
+def gumbel_softmax_sample(logits, temperature, device):
+    y = logits + sample_gumbel(logits.size(), device)
     return F.softmax(y / temperature, dim=-1)
 
 
-def gumbel_softmax(logits, temperature):
+def gumbel_softmax(logits, temperature, device):
     """
     input: [*, n_class]
     return: [*, n_class] an one-hot vector
     """
-    y = gumbel_softmax_sample(logits, temperature)
+    y = gumbel_softmax_sample(logits, temperature, device)
     shape = y.size()
     _, ind = y.max(dim=-1)
     y_hard = torch.zeros_like(y).view(-1, shape[-1])
@@ -35,7 +35,7 @@ def gumbel_softmax(logits, temperature):
     return (y_hard - y).detach() + y
 
 
-def init_model(net, restore=None):
+def init_model(net,device, restore=None):
 
     # restore model weights
     if restore is not None and os.path.exists(restore):
@@ -45,7 +45,7 @@ def init_model(net, restore=None):
     # check if cuda is available
     if torch.cuda.is_available():
         cudnn.benchmark = True
-        net.to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+        net.to(device)
     return net
 
 
@@ -283,7 +283,7 @@ class WizardDataset(Dataset):
         return len(self.samples_paths)
 
 
-def knowledgeToIndex(K, vocab):
+def knowledgeToIndex(K, vocab, device):
     k1, k2, k3 = K
     K1 = []
     K2 = []
@@ -320,5 +320,5 @@ def knowledgeToIndex(K, vocab):
     K1 = torch.LongTensor(K1).unsqueeze(0)
     K2 = torch.LongTensor(K2).unsqueeze(0)
     K3 = torch.LongTensor(K3).unsqueeze(0)
-    K = torch.cat((K1, K2, K3), dim=0).unsqueeze(0).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))  # K: [1, 3, seq_len]
+    K = torch.cat((K1, K2, K3), dim=0).unsqueeze(0).to(device)  # K: [1, 3, seq_len]
     return K

@@ -4,7 +4,7 @@ import torch
 import params
 import nltk
 from utils import init_model, Vocabulary, knowledgeToIndex
-from model import Encoder, KnowledgeEncoder, Decoder, Manager
+from model import Encoder, KnowledgeEncoder, Decoder, Manager, EmbeddingLayer
 
 def main():
     max_len = 50
@@ -27,15 +27,18 @@ def main():
         return
 
     print("loading model...")
-    encoder = Encoder(n_vocab, n_embed, n_hidden, n_layer).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
-    Kencoder = KnowledgeEncoder(n_vocab, n_embed, n_hidden, n_layer).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
-    manager = Manager(n_hidden, n_vocab, temperature).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
-    decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    emlayer = EmbeddingLayer(n_vocab, n_embed, vocab).to(device)
+    encoder = Encoder(n_vocab, n_embed, n_hidden, n_layer).to(device)
+    Kencoder = KnowledgeEncoder(n_vocab, n_embed, n_hidden, n_layer).to(device)
+    manager = Manager(n_hidden, n_vocab, temperature).to(device)
+    decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer).to(device)
 
-    encoder = init_model(encoder, restore=params.encoder_restore)
-    Kencoder = init_model(Kencoder, restore=params.Kencoder_restore)
-    manager = init_model(manager, restore=params.manager_restore)
-    decoder = init_model(decoder, restore=params.decoder_restore)
+    emlayer = init_model(emlayer, device, restore=params.emlayer_restore)
+    encoder = init_model(encoder, device, restore=params.encoder_restore)
+    Kencoder = init_model(Kencoder, device, restore=params.Kencoder_restore)
+    manager = init_model(manager, device, restore=params.manager_restore)
+    decoder = init_model(decoder, device, restore=params.decoder_restore)
     print("successfully loaded!\n")
 
     utterance = ""
@@ -58,7 +61,7 @@ def main():
             k3 = input("Type third Knowledge: ").lower()
 
         K = [k1, k2, k3]
-        K = knowledgeToIndex(K, vocab)
+        K = knowledgeToIndex(K, vocab, device)
         K = Kencoder(K)
         print()
 
@@ -78,13 +81,13 @@ def main():
                     X.append(vocab.stoi[word])
                 else:
                     X.append(vocab.stoi["<UNK>"])
-            X = torch.LongTensor(X).unsqueeze(0).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))  # X: [1, x_seq_len]
+            X = torch.LongTensor(X).unsqueeze(0).to(device)  # X: [1, x_seq_len]
 
             encoder_outputs, hidden, x = encoder(X)
             k_i = manager(x, None, K)
-            outputs = torch.zeros(max_len, 1, n_vocab).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))  # outputs: [max_len, 1, n_vocab]
+            outputs = torch.zeros(max_len, 1, n_vocab).to(device)  # outputs: [max_len, 1, n_vocab]
             hidden = hidden[decoder.n_layer:]
-            output = torch.LongTensor([params.SOS]).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+            output = torch.LongTensor([params.SOS]).to(device)
 
             for t in range(max_len):
                 output, hidden, attn_weights = decoder(output, k_i, hidden, encoder_outputs)
