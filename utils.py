@@ -240,13 +240,15 @@ def load_data(path, vocab, samples_path):
 
 def get_data_loader(samples_path, n_batch, shuffle):
     dataset = WizardDataset(samples_path)
+    train_sampler = torch.utils.data.distributed.DistributedSampler(dataset)
     data_loader = DataLoader(
         dataset=dataset,
         batch_size=n_batch,
         shuffle=shuffle,
-        num_workers=2
+        num_workers=2,
+        sampler=train_sampler
     )
-    return data_loader
+    return train_sampler, data_loader
 
 
 class Vocabulary:

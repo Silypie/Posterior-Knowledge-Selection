@@ -85,6 +85,10 @@ def main():
     manager = Manager(n_hidden, n_vocab, temperature).to(device)
     decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer).to(device)
 
+    # 加载分布式训练保存的模型需要map_location
+    # Load all tensors onto GPU 1
+    # >>> torch.load('tensors.pt', map_location=lambda storage, loc: storage.cuda(1))
+
     emlayer = init_model(emlayer, device, restore=params.emlayer_restore)
     encoder = init_model(encoder, device, restore=params.encoder_restore)
     Kencoder = init_model(Kencoder, device, restore=params.Kencoder_restore)

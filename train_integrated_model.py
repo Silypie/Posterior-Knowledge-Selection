@@ -29,15 +29,17 @@ def parse_arguments():
                    help='teacher forcing ratio')
     p.add_argument('-restore', default=False, action='store_true',
                    help='whether restore trained model')
+    p.add_argument("--local_rank", type=int, default=0, help="multi gpu traning")
     return p.parse_args()
 
 
-def pre_train(model, optimizer, train_loader, args, device):
+def pre_train(model, optimizer, train_loader, args, device, train_sampler):
     model.train()
     parameters = list(model.parameters())
     NLLLoss = nn.NLLLoss(reduction='mean', ignore_index=params.PAD)
 
     for epoch in range(args.pre_epoch):
+        train_sampler.set_epoch(epoch)
         b_loss = 0
         for step, (src_X, src_y, src_K, _) in enumerate(train_loader):
             src_X = src_X.to(device)
@@ -56,28 +58,33 @@ def pre_train(model, optimizer, train_loader, args, device):
             clip_grad_norm_(parameters, args.grad_clip)
             optimizer.step()
             b_loss += bow_loss.item()
-            print("Epoch [%.1d/%.1d] Step [%.4d/%.4d]: bow_loss=%.4f" % (epoch + 1, args.pre_epoch,
+            if args.local_rank == 0:
+                print("Epoch [%.1d/%.1d] Step [%.4d/%.4d]: bow_loss=%.4f" % (epoch + 1, args.pre_epoch,
                                                                              step + 1, len(train_loader),
                                                                              b_loss))
             b_loss = 0
 
             # if (step + 1) % 50 == 0:
             #     b_loss /= 50
-            #     print("Epoch [%.1d/%.1d] Step [%.4d/%.4d]: bow_loss=%.4f" % (epoch + 1, args.pre_epoch,
+            #     if args.local_rank == 0:
+            #         print("Epoch [%.1d/%.1d] Step [%.4d/%.4d]: bow_loss=%.4f" % (epoch + 1, args.pre_epoch,
             #                                                                  step + 1, len(train_loader),
             #                                                                  b_loss))
             #     b_loss = 0
-        # save model
+    
+    # save model
+    if args.local_rank == 0:
         save_model(model, params.integrated_restore)
 
 
-def train(model, optimizer, train_loader, args, device):
+def train(model, optimizer, train_loader, args, device, train_sampler):
     model.train()
     parameters = list(model.parameters())
     NLLLoss = nn.NLLLoss(reduction='mean', ignore_index=params.PAD)
     KLDLoss = nn.KLDivLoss(reduction='batchmean')
 
     for epoch in range(args.n_epoch):
+        train_sampler.set_epoch(epoch)
         b_loss = 0
         k_loss = 0
         n_loss = 0
@@ -111,25 +118,38 @@ def train(model, optimizer, train_loader, args, device):
             k_loss += kldiv_loss.item()
             n_loss += nll_loss.item()
             t_loss += loss.item()
-
-            if (step + 1) % 50 == 0:
-                k_loss /= 50
-                n_loss /= 50
-                b_loss /= 50
-                t_loss /= 50
-                print("Epoch [%.2d/%.2d] Step [%.4d/%.4d]: total_loss=%.4f kldiv_loss=%.4f bow_loss=%.4f nll_loss=%.4f"
+            if args.local_rank == 0:
+                    print("Epoch [%.2d/%.2d] Step [%.4d/%.4d]: total_loss=%.4f kldiv_loss=%.4f bow_loss=%.4f nll_loss=%.4f"
                       % (epoch + 1, args.n_epoch,
                          step + 1, len(train_loader),
                          t_loss, k_loss, b_loss, n_loss))
-                k_loss = 0
-                n_loss = 0
-                b_loss = 0
-                t_loss = 0
+            k_loss = 0
+            n_loss = 0
+            b_loss = 0
+            t_loss = 0
+
+            # if (step + 1) % 50 == 0:
+            #     k_loss /= 50
+            #     n_loss /= 50
+            #     b_loss /= 50
+            #     t_loss /= 50
+            #     if args.local_rank == 0:
+            #         print("Epoch [%.2d/%.2d] Step [%.4d/%.4d]: total_loss=%.4f kldiv_loss=%.4f bow_loss=%.4f nll_loss=%.4f"
+            #           % (epoch + 1, args.n_epoch,
+            #              step + 1, len(train_loader),
+            #              t_loss, k_loss, b_loss, n_loss))
+            #     k_loss = 0
+            #     n_loss = 0
+            #     b_loss = 0
+            #     t_loss = 0
+
         # save model
-        save_model(model, params.integrated_restore)
+        if args.local_rank == 0:
+            save_model(model, params.integrated_restore)
 
 
 def main():
+    torch.distributed.init_process_group("nccl", init_method='env://')
     args = parse_arguments()
     n_vocab = params.n_vocab
     n_layer = params.n_layer
@@ -139,7 +159,8 @@ def main():
     temperature = params.temperature
     train_path = params.train_path
 
-    print("loading_data...")
+    if args.local_rank == 0:
+        print("loading_data...")
     # 训练时加载处理好的词典（如果有的话）
     if os.path.exists("vocab.json"):
         vocab = Vocabulary()
@@ -153,30 +174,39 @@ def main():
         # save vocab
         with open('vocab.json', 'w') as fp:
             json.dump(vocab.stoi, fp)
-    print("successfully build vocab")
+    if args.local_rank == 0:
+        print("successfully build vocab")
 
     load_data(train_path, vocab, params.train_samples_path)
-    train_loader = get_data_loader(params.train_samples_path, n_batch, shuffle=True)
-    print("successfully loaded")
+    train_sampler, train_loader = get_data_loader(params.train_samples_path, n_batch, shuffle=False)
+    if args.local_rank == 0:
+        print("successfully loaded")
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device(args.local_rank if torch.cuda.is_available() else "cpu")
 
     model = PostKS(n_vocab, n_embed, n_hidden, n_layer, temperature, vocab).to(device)
+    model = torch.nn.parallel.DistributedDataParallel(model,
+                                                  device_ids=[args.local_rank],
+                                                  output_device=args.local_rank)
 
     if args.restore:
         model = init_model(model, device, restore=params.integrated_restore)
-        print('init model with saved parameter')
+        if args.local_rank == 0:
+            print('init model with saved parameter')
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     # pre_train knowledge manager
-    print("start pre-training")
-    pre_train(model, optimizer, train_loader, args, device)
-    print("start training")
-    train(model, optimizer, train_loader, args, device)
+    if args.local_rank == 0:
+        print("start pre-training")
+    # pre_train(model, optimizer, train_loader, args, device, train_sampler)
+    if args.local_rank == 0:
+        print("start training")
+    train(model, optimizer, train_loader, args, device, train_sampler)
 
     # save final model
-    save_model(model, params.integrated_restore)
+    if args.local_rank == 0:
+        save_model(model, params.integrated_restore)
 
 
 if __name__ == "__main__":

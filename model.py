@@ -289,13 +289,13 @@ class PostKS(nn.Module):
         self.manager = Manager(n_hidden, n_vocab, temperature)
         self.decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer, vocab, self.emlayer)
     
-    def pre_forward(self, src_X, src_y, src_K):
-        _, _, x = self.encoder(src_X)
-        y = self.Kencoder(src_y)
-        K, knowledge_length = self.Kencoder(src_K)
-        _, _, _, k_logits = self.manager(x, y, K, knowledge_length) # k_logits: [n_batch, n_vocab]
+    # def pre_forward(self, src_X, src_y, src_K):
+    #     _, _, x = self.encoder(src_X)
+    #     y = self.Kencoder(src_y)
+    #     K, knowledge_length = self.Kencoder(src_K)
+    #     _, _, _, k_logits = self.manager(x, y, K, knowledge_length) # k_logits: [n_batch, n_vocab]
 
-        return k_logits
+    #     return k_logits
 
     def forward(self, src_X, src_y, src_K, tgt_y, trf):
         encoder_outputs, hidden, x = self.encoder(src_X)
