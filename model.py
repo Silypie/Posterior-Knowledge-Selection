@@ -297,24 +297,32 @@ class PostKS(nn.Module):
 
     #     return k_logits
 
-    def forward(self, src_X, src_y, src_K, tgt_y, trf):
-        encoder_outputs, hidden, x = self.encoder(src_X)
-        encoder_mask = (src_X == 0)[:, :encoder_outputs.size(0)].unsqueeze(1).bool() # fix warning bug
-        y = self.Kencoder(src_y)
-        K, knowledge_length = self.Kencoder(src_K)
-        prior, posterior, k_i, k_logits = self.manager(x, y, K, knowledge_length)
+    def forward(self, src_X, src_y, src_K, tgt_y, trf, pre_train=False):
+        if pre_train:
+            encoder_outputs, hidden, x = self.encoder(src_X)
+            y = self.Kencoder(src_y)
+            K, knowledge_length = self.Kencoder(src_K)
+            prior, posterior, k_i, k_logits = self.manager(x, y, K, knowledge_length) # k_logits: [n_batch, n_vocab]
 
-        n_batch = src_X.size(0)
-        max_len = tgt_y.size(1)
-        outputs = torch.zeros(max_len, n_batch, self.n_vocab).to(self.emlayer.embedding.weight.device)
-        hidden = hidden[self.n_layer:]
+            return k_logits
+        else:
+            encoder_outputs, hidden, x = self.encoder(src_X)
+            encoder_mask = (src_X == 0)[:, :encoder_outputs.size(0)].unsqueeze(1).bool() # fix warning bug
+            y = self.Kencoder(src_y)
+            K, knowledge_length = self.Kencoder(src_K)
+            prior, posterior, k_i, k_logits = self.manager(x, y, K, knowledge_length)
 
-        output = torch.LongTensor([params.SOS] * n_batch).to(self.emlayer.embedding.weight.device)  # [n_batch]
-        for t in range(max_len):
-            output, hidden, attn_weights = self.decoder(output, k_i, hidden, encoder_outputs, encoder_mask)
-            outputs[t] = output
-            is_teacher = random.random() < trf  # teacher forcing ratio
-            top1 = output.data.max(1)[1]
-            output = tgt_y[:, t] if is_teacher else top1
+            n_batch = src_X.size(0)
+            max_len = tgt_y.size(1)
+            outputs = torch.zeros(max_len, n_batch, self.n_vocab).to(self.emlayer.embedding.weight.device)
+            hidden = hidden[self.n_layer:]
 
-        return prior, posterior, k_logits, outputs
+            output = torch.LongTensor([params.SOS] * n_batch).to(self.emlayer.embedding.weight.device)  # [n_batch]
+            for t in range(max_len):
+                output, hidden, attn_weights = self.decoder(output, k_i, hidden, encoder_outputs, encoder_mask)
+                outputs[t] = output
+                is_teacher = random.random() < trf  # teacher forcing ratio
+                top1 = output.data.max(1)[1]
+                output = tgt_y[:, t] if is_teacher else top1
+
+            return prior, posterior, k_logits, outputs

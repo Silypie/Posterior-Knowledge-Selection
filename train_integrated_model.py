@@ -49,7 +49,7 @@ def pre_train(model, optimizer, train_loader, args, device, train_sampler):
             optimizer.zero_grad()
             n_vocab = params.n_vocab
 
-            k_logits = model.pre_forward(src_X, src_y, src_K) # k_logits: [n_batch, n_vocab]
+            k_logits = model.forward(src_X, src_y, src_K, _, args.tfr, True) # k_logits: [n_batch, n_vocab]
 
             seq_len = src_y.size(1) - 1
             k_logits = k_logits.repeat(seq_len, 1, 1).transpose(0, 1).contiguous().view(-1, n_vocab) # [n_batch*seq_len, n_vocab]
@@ -98,7 +98,7 @@ def train(model, optimizer, train_loader, args, device, train_sampler):
             optimizer.zero_grad()
             n_vocab = params.n_vocab
 
-            prior, posterior,k_logits, outputs = model.forward(src_X, src_y, src_K, tgt_y, args.tfr)
+            prior, posterior,k_logits, outputs = model.forward(src_X, src_y, src_K, tgt_y, args.tfr, False)
 
             kldiv_loss = KLDLoss(prior, posterior.detach())
 
@@ -187,7 +187,8 @@ def main():
     model = PostKS(n_vocab, n_embed, n_hidden, n_layer, temperature, vocab).to(device)
     model = torch.nn.parallel.DistributedDataParallel(model,
                                                   device_ids=[args.local_rank],
-                                                  output_device=args.local_rank)
+                                                  output_device=args.local_rank,
+                                                  find_unused_parameters=True)
 
     if args.restore:
         model = init_model(model, device, restore=params.integrated_restore)
@@ -199,14 +200,14 @@ def main():
     # pre_train knowledge manager
     if args.local_rank == 0:
         print("start pre-training")
-    # pre_train(model, optimizer, train_loader, args, device, train_sampler)
+    pre_train(model, optimizer, train_loader, args, device, train_sampler)
     if args.local_rank == 0:
         print("start training")
     train(model, optimizer, train_loader, args, device, train_sampler)
 
     # save final model
-    if args.local_rank == 0:
-        save_model(model, params.integrated_restore)
+    # if args.local_rank == 0:
+    #     save_model(model, params.integrated_restore)
 
 
 if __name__ == "__main__":
