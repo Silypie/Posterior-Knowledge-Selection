@@ -157,7 +157,7 @@ def main():
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    model = PostKS(n_vocab, n_embed, n_hidden, n_layer, temperature, device, vocab)
+    model = PostKS(n_vocab, n_embed, n_hidden, n_layer, temperature, device, vocab).to(device)
 
     if args.restore:
         model = init_model(model, device, restore=params.integrated_restore)
