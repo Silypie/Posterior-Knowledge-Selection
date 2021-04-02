@@ -70,14 +70,13 @@ class Encoder(nn.Module):
 
 
 class KnowledgeEncoder(nn.Module):
-    def __init__(self, n_vocab, n_embed, n_hidden, n_layer,device, vocab=None, emlayer=None):
+    def __init__(self, n_vocab, n_embed, n_hidden, n_layer, vocab=None, emlayer=None):
         super(KnowledgeEncoder, self).__init__()
         self.n_vocab = n_vocab
         self.n_embed = n_embed
         self.n_hidden = n_hidden
         self.n_layer = n_layer
         self.embedding = emlayer
-        self.device = device
         # if vocab is None:
         #     self.embedding = nn.Embedding(n_vocab, n_embed)
         # else:
@@ -118,7 +117,7 @@ class KnowledgeEncoder(nn.Module):
                 f_hidden, b_hidden = hidden[-1]
                 encoded[i] = torch.cat((f_hidden, b_hidden), dim=1)  # encoded: [n_batch, 2*n_hidden]
             # [n_batch, N, 2*n_hidden], [n_batch, N]
-            return encoded.transpose(0, 1).to(self.device), knowledge_length.transpose(0, 1).to(self.device)
+            return encoded.transpose(0, 1).to(self.gru.weight_ih_l0.device), knowledge_length.transpose(0, 1).to(self.gru.weight_ih_l0.device)
 
         else:  # [n_batch, seq_len]
             y = K[:, 1:]    # 不考虑<SOS>
@@ -135,14 +134,13 @@ class KnowledgeEncoder(nn.Module):
 
 
 class Manager(nn.Module):
-    def __init__(self, n_hidden, n_vocab, temperature, device):
+    def __init__(self, n_hidden, n_vocab, temperature):
         super(Manager, self).__init__()
         self.n_hidden = n_hidden
         self.n_vocab = n_vocab
         self.temperature = temperature
-        self.device = device
-        self.mlp = nn.Sequential(nn.Linear(4*n_hidden, 2*n_hidden))
-        self.mlp_k = nn.Sequential(nn.Linear(2*n_hidden, n_vocab))
+        self.mlp = nn.Linear(4*n_hidden, 2*n_hidden)
+        self.mlp_k = nn.Linear(2*n_hidden, n_vocab)
 
     def forward(self, x, y, K, knowledge_length):
         '''
@@ -169,14 +167,14 @@ class Manager(nn.Module):
             posterior_logits = torch.mul(posterior_logits, knowledge_length)
             posterior = torch.mul(posterior, knowledge_length)
 
-            k_idx = gumbel_softmax(posterior_logits, self.temperature, self.device)  # k_idx: [n_batch, N(one_hot)]
+            k_idx = gumbel_softmax(posterior_logits, self.temperature, self.mlp.weight.device)  # k_idx: [n_batch, N(one_hot)]
             k_i = torch.bmm(K, k_idx.unsqueeze(2)).squeeze(2)  # k_i: [n_batch, 2*n_hidden] 获取选择的知识的hidden
             k_logits = F.log_softmax(self.mlp_k(k_i), dim=-1)  # k_logits: [n_batch, n_vocab] 根据知识得到词的分布
 
             return prior, posterior, k_i, k_logits  # prior: [n_batch, N], posterior: [n_batch, N]
         else:   # 测试时
             n_batch = K.size(0)
-            k_i = torch.Tensor(n_batch, 2*self.n_hidden).to(self.device) # 存储每个样本选择的知识的hidden
+            k_i = torch.Tensor(n_batch, 2*self.n_hidden).to(self.mlp.weight.device) # 存储每个样本选择的知识的hidden
             prior = F.log_softmax(torch.bmm(x.unsqueeze(1), K.transpose(-1, -2)), dim=-1).squeeze(1) # [n_batch, N]
             # 将长度为0的知识对应的值置为0，即不考虑
             prior = torch.mul(prior, knowledge_length)
@@ -276,21 +274,20 @@ class Decoder(nn.Module):  # Hierarchical Gated Fusion Unit
 
 
 class PostKS(nn.Module):
-    def __init__(self, n_vocab, n_embed, n_hidden, n_layer, temperature, device, vocab=None):
+    def __init__(self, n_vocab, n_embed, n_hidden, n_layer, temperature, vocab=None):
         super(PostKS, self).__init__()
         self.n_vocab = n_vocab
         self.n_embed = n_embed
         self.n_hidden = n_hidden
         self.n_layer = n_layer
         self.temperature = temperature
-        self.device = device
         self.vocab = vocab
 
-        self.emlayer = EmbeddingLayer(n_vocab, n_embed, vocab).to(device)
-        self.encoder = Encoder(n_vocab, n_embed, n_hidden, n_layer, vocab, self.emlayer).to(device)
-        self.Kencoder = KnowledgeEncoder(n_vocab, n_embed, n_hidden, n_layer,device, vocab, self.emlayer).to(device)
-        self.manager = Manager(n_hidden, n_vocab, temperature, device).to(device)
-        self.decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer, vocab, self.emlayer).to(device)
+        self.emlayer = EmbeddingLayer(n_vocab, n_embed, vocab)
+        self.encoder = Encoder(n_vocab, n_embed, n_hidden, n_layer, vocab, self.emlayer)
+        self.Kencoder = KnowledgeEncoder(n_vocab, n_embed, n_hidden, n_layer, vocab, self.emlayer)
+        self.manager = Manager(n_hidden, n_vocab, temperature)
+        self.decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer, vocab, self.emlayer)
     
     def pre_forward(self, src_X, src_y, src_K):
         _, _, x = self.encoder(src_X)
@@ -309,10 +306,10 @@ class PostKS(nn.Module):
 
         n_batch = src_X.size(0)
         max_len = tgt_y.size(1)
-        outputs = torch.zeros(max_len, n_batch, self.n_vocab).to(self.device)
+        outputs = torch.zeros(max_len, n_batch, self.n_vocab).to(self.emlayer.embedding.weight.device)
         hidden = hidden[self.n_layer:]
 
-        output = torch.LongTensor([params.SOS] * n_batch).to(self.device)  # [n_batch]
+        output = torch.LongTensor([params.SOS] * n_batch).to(self.emlayer.embedding.weight.device)  # [n_batch]
         for t in range(max_len):
             output, hidden, attn_weights = self.decoder(output, k_i, hidden, encoder_outputs, encoder_mask)
             outputs[t] = output
