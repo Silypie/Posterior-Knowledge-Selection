@@ -22,3 +22,4 @@ manager_restore = "snapshots/PostKS-manager.pt"
 decoder_restore = "snapshots/PostKS-decoder.pt"
 all_restore=[emlayer_restore ,encoder_restore, Kencoder_restore, manager_restore, decoder_restore]
 
+integrated_restore = "snapshots/PostKS-integrated.pt"

@@ -1,10 +1,12 @@
 import math
+import random
 import torch
 import torch.nn as nn
 import torch.nn.utils.rnn as rnn
 import torch.nn.functional as F
 from torchnlp.word_to_vector import GloVe
 from utils import gumbel_softmax
+import params
 
 class EmbeddingLayer(nn.Module):
     def __init__(self, n_vocab, n_embed, vocab=None):
@@ -271,3 +273,51 @@ class Decoder(nn.Module):  # Hierarchical Gated Fusion Unit
         output = self.out(torch.cat((output, context), dim=1))  # [n_batch, n_vocab]
         output = F.log_softmax(output, dim=1)
         return output, hidden, attn_weights
+
+
+class PostKS(nn.Module):
+    def __init__(self, n_vocab, n_embed, n_hidden, n_layer, temperature, device, vocab=None):
+        super(PostKS, self).__init__()
+        self.n_vocab = n_vocab
+        self.n_embed = n_embed
+        self.n_hidden = n_hidden
+        self.n_layer = n_layer
+        self.temperature = temperature
+        self.device = device
+        self.vocab = vocab
+
+        self.emlayer = EmbeddingLayer(n_vocab, n_embed, vocab).to(device)
+        self.encoder = Encoder(n_vocab, n_embed, n_hidden, n_layer, vocab, self.emlayer).to(device)
+        self.Kencoder = KnowledgeEncoder(n_vocab, n_embed, n_hidden, n_layer,device, vocab, self.emlayer).to(device)
+        self.manager = Manager(n_hidden, n_vocab, temperature, device).to(device)
+        self.decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer, vocab, self.emlayer).to(device)
+    
+    def pre_forward(self, src_X, src_y, src_K):
+        _, _, x = self.encoder(src_X)
+        y = self.Kencoder(src_y)
+        K, knowledge_length = self.Kencoder(src_K)
+        _, _, _, k_logits = self.manager(x, y, K, knowledge_length) # k_logits: [n_batch, n_vocab]
+
+        return k_logits
+
+    def forward(self, src_X, src_y, src_K, tgt_y, trf):
+        encoder_outputs, hidden, x = self.encoder(src_X)
+        encoder_mask = (src_X == 0)[:, :encoder_outputs.size(0)].unsqueeze(1).bool() # fix warning bug
+        y = self.Kencoder(src_y)
+        K, knowledge_length = self.Kencoder(src_K)
+        prior, posterior, k_i, k_logits = self.manager(x, y, K, knowledge_length)
+
+        n_batch = src_X.size(0)
+        max_len = tgt_y.size(1)
+        outputs = torch.zeros(max_len, n_batch, self.n_vocab).to(self.device)
+        hidden = hidden[self.n_layer:]
+
+        output = torch.LongTensor([params.SOS] * n_batch).to(self.device)  # [n_batch]
+        for t in range(max_len):
+            output, hidden, attn_weights = self.decoder(output, k_i, hidden, encoder_outputs, encoder_mask)
+            outputs[t] = output
+            is_teacher = random.random() < trf  # teacher forcing ratio
+            top1 = output.data.max(1)[1]
+            output = tgt_y[:, t] if is_teacher else top1
+
+        return prior, posterior, k_logits, outputs

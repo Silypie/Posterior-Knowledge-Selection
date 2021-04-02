@@ -22,6 +22,7 @@ For decoder, I apply Hierarchical Gated Fusion Unit (HGFU) [[Yao et al. 2017](ht
 #### If you run train, vocab.json and trained parameters will be saved. Then you can play demo.
 ```
 $ python train.py -pre_epoch 5 -n_epoch 15 -n_batch 128
+$ python train_integrated_model.py -pre_epoch 1 -n_epoch 1 -n_batch 1
 ```
 
 <br><br>
