@@ -6,3 +6,4 @@ __pycache__/*
 .word_vectors_cache/glove.840B.300d.txt.pt
 vocab.json
 snapshots/
+.vscode/settings.json
