@@ -39,7 +39,8 @@ def pre_train(model, optimizer, train_loader, args, device, train_sampler):
     NLLLoss = nn.NLLLoss(reduction='mean', ignore_index=params.PAD)
 
     for epoch in range(args.pre_epoch):
-        train_sampler.set_epoch(epoch)
+        if train_sampler is not None:
+            train_sampler.set_epoch(epoch)
         b_loss = 0
         for step, (src_X, src_y, src_K, _) in enumerate(train_loader):
             src_X = src_X.to(device)
@@ -84,7 +85,8 @@ def train(model, optimizer, train_loader, args, device, train_sampler):
     KLDLoss = nn.KLDivLoss(reduction='batchmean')
 
     for epoch in range(args.n_epoch):
-        train_sampler.set_epoch(epoch)
+        if train_sampler is not None:
+            train_sampler.set_epoch(epoch)
         b_loss = 0
         k_loss = 0
         n_loss = 0
@@ -149,7 +151,9 @@ def train(model, optimizer, train_loader, args, device, train_sampler):
 
 
 def main():
-    torch.distributed.init_process_group("nccl", init_method='env://')
+    nccl_available = torch.distributed.is_nccl_available()
+    if nccl_available:
+        torch.distributed.init_process_group("nccl", init_method='env://')
     args = parse_arguments()
     n_vocab = params.n_vocab
     n_layer = params.n_layer
@@ -178,17 +182,19 @@ def main():
         print("successfully build vocab")
 
     load_data(train_path, vocab, params.train_samples_path)
-    train_sampler, train_loader = get_data_loader(params.train_samples_path, n_batch, shuffle=False)
+    train_sampler, train_loader = get_data_loader(params.train_samples_path, n_batch, nccl=nccl_available)
+
     if args.local_rank == 0:
         print("successfully loaded")
 
     device = torch.device(args.local_rank if torch.cuda.is_available() else "cpu")
 
     model = PostKS(n_vocab, n_embed, n_hidden, n_layer, temperature, vocab).to(device)
-    model = torch.nn.parallel.DistributedDataParallel(model,
-                                                  device_ids=[args.local_rank],
-                                                  output_device=args.local_rank,
-                                                  find_unused_parameters=True)
+    if nccl_available:
+        model = torch.nn.parallel.DistributedDataParallel(model,
+                                                        device_ids=[args.local_rank],
+                                                        output_device=args.local_rank,
+                                                        find_unused_parameters=True)
 
     if args.restore:
         model = init_model(model, device, restore=params.integrated_restore)

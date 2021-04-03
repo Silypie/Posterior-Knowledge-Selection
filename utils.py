@@ -238,16 +238,24 @@ def load_data(path, vocab, samples_path):
     # return X_ind, y_ind, K_ind
 
 
-def get_data_loader(samples_path, n_batch, shuffle):
+def get_data_loader(samples_path, n_batch, nccl):
     dataset = WizardDataset(samples_path)
-    train_sampler = torch.utils.data.distributed.DistributedSampler(dataset)
-    data_loader = DataLoader(
-        dataset=dataset,
-        batch_size=n_batch,
-        shuffle=shuffle,
-        num_workers=2,
-        sampler=train_sampler
-    )
+    if nccl:
+        train_sampler = torch.utils.data.distributed.DistributedSampler(dataset)
+        data_loader = DataLoader(
+            dataset=dataset,
+            batch_size=n_batch,
+            num_workers=4,
+            sampler=train_sampler
+        )
+    else:
+        train_sampler = None
+        data_loader = DataLoader(
+            dataset=dataset,
+            batch_size=n_batch,
+            num_workers=4,
+            shuffle=True
+        )
     return train_sampler, data_loader
 
 
