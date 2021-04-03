@@ -223,7 +223,14 @@ def load_data(path, vocab, samples_path):
     
     # 将处理好的结果按样本分割成多个文件保存，以防重复计算和占用过多内存
     for i in range(len(src_X)):
-        with open(samples_path+"%d.txt"%i,"w",encoding = "utf-8") as fout:
+        # 分目录存放，单目录下最多存放5000个文件
+        index_1 = i // 5000
+        index_2 = i % 5000
+        file_path = samples_path + str(index_1) + '/'
+        if not os.path.exists(file_path):
+            os.mkdir(file_path)
+
+        with open(file_path+"%d.txt"%index_2,"w",encoding = "utf-8") as fout:
             # 第一行：src_x \t src_y \t tgt_y \n
             out_line = ' '.join([str(x) for x in src_X[i]]) + '\t' + ' '.join([str(y) for y in src_y[i]]) + '\t' + ' '.join([str(y) for y in src_y[i]])
             fout.write(out_line+"\n")
@@ -268,11 +275,14 @@ class Vocabulary:
 class WizardDataset(Dataset):
     def __init__(self, samples_path):
         self.samples_path = samples_path
-        self.samples_paths = os.listdir(samples_path)
+        self.samples_dirs = os.listdir(samples_path)
 
     def __getitem__(self, index):
         # 在这里再从磁盘读取具体的某个样本内容，而不是一次性加载全部数据
-        path = self.samples_path + self.samples_paths[index]
+        index_1 = index // 5000
+        index_2 = index % 5000
+        path = self.samples_path + str(index_1) + '/' + str(index_2) + '.txt'
+
         with open(path,"r",encoding = "utf-8") as f:
             line_1 = f.readline()
             src_x, src_y, tgt_y = line_1.split('\t')
@@ -290,7 +300,10 @@ class WizardDataset(Dataset):
         return src_x, src_y, src_K, tgt_y
 
     def __len__(self):
-        return len(self.samples_paths)
+        num = 0
+        for dir in self.samples_dirs:
+            num = num + len(os.listdir(self.samples_path + dir))
+        return num
 
 
 def knowledgeToIndex(K, vocab, device):

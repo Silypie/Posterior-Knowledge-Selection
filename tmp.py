@@ -2,7 +2,9 @@ import sys
 
 import json
 import os
+import params
 from threading import main_thread
+from utils import get_data_loader
 from tqdm import tqdm
 from nltk import word_tokenize
 
@@ -40,3 +42,9 @@ def cal_length():
 if __name__ == '__main__':
     # cal_length()
     # datas = json.load('./data/')
+    num = 0
+    samples_dirs = os.listdir(params.train_samples_path)
+    for dir in samples_dirs:
+        num = num + len(os.listdir(params.train_samples_path + dir))
+    print(num)
+    pass
