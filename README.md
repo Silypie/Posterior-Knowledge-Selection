@@ -15,9 +15,6 @@ For decoder, I apply Hierarchical Gated Fusion Unit (HGFU) [[Yao et al. 2017](ht
 - nltk.download('punkt')
 
 <br><br>
-#### 对于这样解耦的模型不好使用DataParallel
-
-<br><br>
 ## Train model
 #### If you run train, vocab.json and trained parameters will be saved. Then you can play demo.
 ```
@@ -25,6 +22,10 @@ $ python train.py -pre_epoch 5 -n_epoch 15 -n_batch 128
 $ python train_integrated_model.py -pre_epoch 1 -n_epoch 1 -n_batch 1
 $ CUDA_VISIBLE_DEVICES=0,1,2  python -m torch.distributed.launch --nproc_per_node=3 train_integrated_model.py -pre_epoch 1 -n_epoch 1 -n_batch 5
 ```
+
+<br><br>
+## test model
+$ python test.py -n_batch 4
 
 <br><br>
 ## Play demo

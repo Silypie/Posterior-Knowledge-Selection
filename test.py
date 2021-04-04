@@ -70,7 +70,8 @@ def main():
 
     model = PostKS(n_vocab, n_embed, n_hidden, n_layer, temperature, vocab).to(device)
 
-    model = init_model(model, device, restore=params.integrated_restore)
+    # 测试时不使用数据并行模式，需对参数名进行转换，去除module. 前缀
+    model = init_model(model, device, restore=params.integrated_restore, is_test=True)
     print('init model with saved parameter')
 
     print("start evaluating")

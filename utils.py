@@ -8,6 +8,7 @@ import torch.backends.cudnn as cudnn
 from collections import Counter
 import nltk
 import json
+from collections import OrderedDict
 
 
 
@@ -35,18 +36,27 @@ def gumbel_softmax(logits, temperature, device):
     return (y_hard - y).detach() + y
 
 
-def init_model(net,device, restore=None):
+def init_model(net,device, restore=None, is_test=False):
 
     # restore model weights
     if restore is not None and os.path.exists(restore):
         # 使用map_location映射张量位置，防止所有张量都加载到同一张显卡
-        net.load_state_dict(torch.load(restore, map_location=device))
-        # print("Restore model from: {}".format(os.path.abspath(restore)))
+        state_dict = torch.load(restore, map_location=device)
 
-    # check if cuda is available
-    # if torch.cuda.is_available():
-    #     cudnn.benchmark = True
-    #     net.to(device)
+        if not is_test:
+            net.load_state_dict(state_dict)
+        else:
+            # 测试加载模型时，由于之前的模型是使用DistributedDataParallel包装的
+            # 保存时会自动给参数加上module.（decoder.out.bias变为module.decoder.out.bias）
+            # 因为测试时不使用数据并行模式，需对参数名进行转换
+            # create new OrderedDict that does not contain `module.`
+            new_state_dict = OrderedDict()
+            for k, v in state_dict.items():
+                name = k[7:] # remove `module.`
+                new_state_dict[name] = v
+            # load params
+            net.load_state_dict(new_state_dict)
+
     return net
 
 
