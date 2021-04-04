@@ -221,8 +221,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt as e:
-        print("[STOP]", e)
-
+    main()

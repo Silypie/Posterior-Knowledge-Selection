@@ -40,7 +40,7 @@ def init_model(net,device, restore=None):
     # restore model weights
     if restore is not None and os.path.exists(restore):
         net.load_state_dict(torch.load(restore))
-        print("Restore model from: {}".format(os.path.abspath(restore)))
+        # print("Restore model from: {}".format(os.path.abspath(restore)))
 
     # check if cuda is available
     if torch.cuda.is_available():
