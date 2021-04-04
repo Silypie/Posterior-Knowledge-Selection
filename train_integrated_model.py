@@ -204,6 +204,8 @@ def main():
         model = init_model(model, device, restore=params.integrated_restore)
         if args.local_rank == 0:
             print('init model with saved parameter')
+    # 进程同步，防止有些进程还没初始化完模型就开始训练
+    torch.distributed.barrier()
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
