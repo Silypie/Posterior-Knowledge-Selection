@@ -243,7 +243,7 @@ def load_data(path, vocab, samples_path):
 
         with open(file_path+"%d.txt"%index_2,"w",encoding = "utf-8") as fout:
             # 第一行：src_x \t src_y \t tgt_y \n
-            out_line = ' '.join([str(x) for x in src_X[i]]) + '\t' + ' '.join([str(y) for y in src_y[i]]) + '\t' + ' '.join([str(y) for y in src_y[i]])
+            out_line = ' '.join([str(x) for x in src_X[i]]) + '\t' + ' '.join([str(y) for y in src_y[i]]) + '\t' + ' '.join([str(y) for y in tgt_y[i]])
             fout.write(out_line+"\n")
             # 第二行：k1 \t ... \t kn
             out_line = ''
