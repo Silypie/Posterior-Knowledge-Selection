@@ -253,6 +253,7 @@ def get_data_loader(samples_path, n_batch, nccl):
             dataset=dataset,
             batch_size=n_batch,
             num_workers=4,
+            pin_memory=True,
             sampler=train_sampler
         )
     else:
