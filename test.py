@@ -5,48 +5,36 @@ import torch.nn as nn
 import params
 import argparse
 from utils import init_model, Vocabulary, build_vocab, load_data, get_data_loader
-from model import EmbeddingLayer, Encoder, KnowledgeEncoder, Decoder, Manager
+from model import PostKS
 
 
 def parse_arguments():
     p = argparse.ArgumentParser(description='Hyperparams')
     p.add_argument('-n_batch', type=int, default=128,
-                   help='number of epochs for train')
+                   help='number of epochs for test')
     return p.parse_args()
 
 
 def evaluate(model, test_loader, device):
-    encoder, Kencoder, manager, decoder = [*model]
-    encoder.eval(), Kencoder.eval(), manager.eval(), decoder.eval()
+    model.eval()
     NLLLoss = nn.NLLLoss(reduction='mean', ignore_index=params.PAD)
     total_loss = 0
+    n_vocab = params.n_vocab
 
     for step, (src_X, _, src_K, tgt_y) in enumerate(test_loader):
         src_X = src_X.to(device)
         src_K = src_K.to(device)
         tgt_y = tgt_y.to(device)
 
-        encoder_outputs, hidden, x = encoder(src_X)
-        # 每个批次的最长序列长度不一定等于数据集中的最长序列长度
-        encoder_mask = (src_X == 0)[:, :encoder_outputs.size(0)].unsqueeze(1).bool()
-        K = Kencoder(src_K)
-        k_i = manager(x, None, K)
-        n_batch = src_X.size(0)
-        max_len = tgt_y.size(1)
-        n_vocab = params.n_vocab
-
-        outputs = torch.zeros(max_len, n_batch, n_vocab).to(device)
-        hidden = hidden[params.n_layer:]
-        output = torch.LongTensor([params.SOS] * n_batch).to(device)  # [n_batch]
-        for t in range(max_len):
-            output, hidden, attn_weights = decoder(output, k_i, hidden, encoder_outputs, encoder_mask)
-            outputs[t] = output
-            output = output.data.max(1)[1]
+        outputs = model.forward(src_X, _, src_K, tgt_y, 0, False, True)
 
         outputs = outputs.transpose(0, 1).contiguous()
         loss = NLLLoss(outputs.view(-1, n_vocab),
                            tgt_y.contiguous().view(-1))
         total_loss += loss.item()
+        if step % 10 ==0:
+            print("Step [%.4d/%.4d]: NLLLoss=%.4f" % (step, len(test_loader), loss.item()))
+
     total_loss /= len(test_loader)
     print("nll_loss=%.4f" % (total_loss))
 
@@ -74,35 +62,20 @@ def main():
     else:
         train_path = params.train_path
         vocab = build_vocab(train_path, n_vocab)
+    print("successfully build vocab")
 
-    test_X, test_y, test_K = load_data(test_path, vocab)
-    test_loader = get_data_loader(test_X, test_y, test_K, n_batch)
+    load_data(test_path, vocab, params.test_samples_path)
+    test_sampler, test_loader = get_data_loader(params.test_samples_path, n_batch, nccl=False) # 暂时在单卡上测试
     print("successfully loaded")
 
-    emlayer = EmbeddingLayer(n_vocab, n_embed, vocab).to(device)
-    encoder = Encoder(n_vocab, n_embed, n_hidden, n_layer).to(device)
-    Kencoder = KnowledgeEncoder(n_vocab, n_embed, n_hidden, n_layer).to(device)
-    manager = Manager(n_hidden, n_vocab, temperature).to(device)
-    decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer).to(device)
+    model = PostKS(n_vocab, n_embed, n_hidden, n_layer, temperature, vocab).to(device)
 
-    # 加载分布式训练保存的模型需要map_location
-    # Load all tensors onto GPU 1
-    # >>> torch.load('tensors.pt', map_location=lambda storage, loc: storage.cuda(1))
+    model = init_model(model, device, restore=params.integrated_restore)
+    print('init model with saved parameter')
 
-    emlayer = init_model(emlayer, device, restore=params.emlayer_restore)
-    encoder = init_model(encoder, device, restore=params.encoder_restore)
-    Kencoder = init_model(Kencoder, device, restore=params.Kencoder_restore)
-    manager = init_model(manager, device, restore=params.manager_restore)
-    decoder = init_model(decoder, device, restore=params.decoder_restore)
-
-    model = [encoder, Kencoder, manager, decoder]
     print("start evaluating")
     evaluate(model, test_loader, device)
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt as e:
-
-        print("[STOP]", e)
+    main()

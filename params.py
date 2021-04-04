@@ -12,7 +12,8 @@ temperature = 0.8
 train_path = "data/prepared_data/test_seen.json"
 train_samples_path = "data/prepared_data/train_samples/"
 
-test_path = "data/valid_self_original_no_cands.txt"
+test_path = "data/prepared_data/test_seen.json"
+test_samples_path = "data/prepared_data/test_samples/"
 
 model_root = "snapshots"
 emlayer_restore = "snapshots/PostKS-emlayer.pt"

@@ -182,7 +182,7 @@ class Manager(nn.Module):
             k_idx = prior.max(1)[1].unsqueeze(1)  # k_idx: [n_batch, 1] 直接根据先验分布选择的知识索引
             for i in range(n_batch):
                 k_i[i] = K[i, k_idx[i]]  # 得到每个样本选择的知识的hidden
-            return k_i
+            return k_i  # k_i: [n_batch, 2*n_hidden]
 
 
 class Attention(nn.Module):
@@ -297,7 +297,7 @@ class PostKS(nn.Module):
 
     #     return k_logits
 
-    def forward(self, src_X, src_y, src_K, tgt_y, trf, pre_train=False):
+    def forward(self, src_X, src_y, src_K, tgt_y, trf, pre_train=False, is_test=False):
         if pre_train:
             encoder_outputs, hidden, x = self.encoder(src_X)
             y = self.Kencoder(src_y)
@@ -307,10 +307,17 @@ class PostKS(nn.Module):
             return k_logits
         else:
             encoder_outputs, hidden, x = self.encoder(src_X)
+            # 每个批次的最长序列长度不一定等于数据集中的最长序列长度
             encoder_mask = (src_X == 0)[:, :encoder_outputs.size(0)].unsqueeze(1).bool() # fix warning bug
-            y = self.Kencoder(src_y)
+            if is_test:
+                y = None
+            else:
+                y = self.Kencoder(src_y)
             K, knowledge_length = self.Kencoder(src_K)
-            prior, posterior, k_i, k_logits = self.manager(x, y, K, knowledge_length)
+            if is_test:
+                k_i = self.manager(x, y, K, knowledge_length)
+            else:
+                prior, posterior, k_i, k_logits = self.manager(x, y, K, knowledge_length)
 
             n_batch = src_X.size(0)
             max_len = tgt_y.size(1)
@@ -324,5 +331,8 @@ class PostKS(nn.Module):
                 is_teacher = random.random() < trf  # teacher forcing ratio
                 top1 = output.data.max(1)[1]
                 output = tgt_y[:, t] if is_teacher else top1
-
-            return prior, posterior, k_logits, outputs
+            
+            if is_test:
+                return outputs
+            else:
+                return prior, posterior, k_logits, outputs

@@ -50,7 +50,7 @@ def pre_train(model, optimizer, train_loader, args, device, train_sampler):
             optimizer.zero_grad()
             n_vocab = params.n_vocab
 
-            k_logits = model.forward(src_X, src_y, src_K, _, args.tfr, True) # k_logits: [n_batch, n_vocab]
+            k_logits = model.forward(src_X, src_y, src_K, _, args.tfr, True, False) # k_logits: [n_batch, n_vocab]
 
             seq_len = src_y.size(1) - 1
             k_logits = k_logits.repeat(seq_len, 1, 1).transpose(0, 1).contiguous().view(-1, n_vocab) # [n_batch*seq_len, n_vocab]
@@ -100,7 +100,7 @@ def train(model, optimizer, train_loader, args, device, train_sampler):
             optimizer.zero_grad()
             n_vocab = params.n_vocab
 
-            prior, posterior,k_logits, outputs = model.forward(src_X, src_y, src_K, tgt_y, args.tfr, False)
+            prior, posterior,k_logits, outputs = model.forward(src_X, src_y, src_K, tgt_y, args.tfr, False, False)
 
             kldiv_loss = KLDLoss(prior, posterior.detach())
 
