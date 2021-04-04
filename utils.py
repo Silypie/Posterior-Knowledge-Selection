@@ -39,13 +39,14 @@ def init_model(net,device, restore=None):
 
     # restore model weights
     if restore is not None and os.path.exists(restore):
-        net.load_state_dict(torch.load(restore))
+        # 使用map_location映射张量位置，防止所有张量都加载到同一张显卡
+        net.load_state_dict(torch.load(restore, map_location=device))
         # print("Restore model from: {}".format(os.path.abspath(restore)))
 
     # check if cuda is available
-    if torch.cuda.is_available():
-        cudnn.benchmark = True
-        net.to(device)
+    # if torch.cuda.is_available():
+    #     cudnn.benchmark = True
+    #     net.to(device)
     return net
 
 
@@ -253,7 +254,7 @@ def get_data_loader(samples_path, n_batch, nccl):
             dataset=dataset,
             batch_size=n_batch,
             num_workers=4,
-            pin_memory=True,
+            # pin_memory=True,
             sampler=train_sampler
         )
     else:
