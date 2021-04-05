@@ -15,7 +15,7 @@ def parse_arguments():
     return p.parse_args()
 
 
-def evaluate(model, test_loader, device):
+def evaluate(model, test_loader, device, vocab):
     model.eval()
     NLLLoss = nn.NLLLoss(reduction='mean', ignore_index=params.PAD)
     total_loss = 0
@@ -24,16 +24,38 @@ def evaluate(model, test_loader, device):
     for step, (src_X, _, src_K, tgt_y) in enumerate(test_loader):
         src_X = src_X.to(device)
         src_K = src_K.to(device)
-        tgt_y = tgt_y.to(device)
+        tgt_y = tgt_y.to(device) # [n_batch, max_len]
 
-        outputs = model.forward(src_X, _, src_K, tgt_y, 0, False, True)
+        outputs = model.forward(src_X, _, src_K, tgt_y, 0, False, True) # [max_len, n_batch, self.n_vocab]
 
-        outputs = outputs.transpose(0, 1).contiguous()
+        outputs = outputs.transpose(0, 1).contiguous()  # [n_batch, max_len, self.n_vocab]
         loss = NLLLoss(outputs.view(-1, n_vocab),
-                           tgt_y.contiguous().view(-1))
+                        tgt_y.contiguous().view(-1))
         total_loss += loss.item()
         if step % 10 ==0:
             print("Step [%.4d/%.4d]: NLLLoss=%.4f" % (step, len(test_loader), loss.item()))
+
+        for i in range(outputs.size(0)):
+            output = outputs[i] # [max_len, self.n_vocab]
+            idxs = output.max(dim=1)[1] # [max_len]
+
+            answer = ''
+            for idx in idxs:
+                if idx.item() == params.EOS:
+                    break
+                answer += vocab.itos[idx.item()] + " "
+            answer = answer[:-1]
+
+            tgts = tgt_y[i] # [max_len]
+            target = ''
+            for tgt in tgts:
+                if tgt.item() == params.EOS:
+                    break
+                target += vocab.itos[tgt.item()] + " "
+            target = target[:-1]
+            print('answer: ', answer)
+            print('target: ',target)
+        break
 
     total_loss /= len(test_loader)
     print("nll_loss=%.4f" % (total_loss))
@@ -75,7 +97,7 @@ def main():
     print('init model with saved parameter')
 
     print("start evaluating")
-    evaluate(model, test_loader, device)
+    evaluate(model, test_loader, device, vocab)
 
 
 if __name__ == "__main__":
