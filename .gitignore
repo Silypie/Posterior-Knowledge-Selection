@@ -7,3 +7,4 @@ __pycache__/*
 vocab.json
 snapshots/
 .vscode/settings.json
+output/

@@ -12,8 +12,13 @@ temperature = 0.8
 train_path = "data/prepared_data/test_seen.json"
 train_samples_path = "data/prepared_data/train_samples/"
 
-test_path = "data/prepared_data/test_seen.json"
-test_samples_path = "data/prepared_data/test_samples/"
+test_seen_path = "data/prepared_data/test_seen.json"
+test_seen_samples_path = "data/prepared_data/test_seen__samples/"
+test_seen_output_path = "output/seen/"
+
+test_unseen_path = "data/prepared_data/test_unseen.json"
+test_unseen_samples_path = "data/prepared_data/test_unseen__samples/"
+test_unseen_output_path = "output/unseen/"
 
 model_root = "snapshots"
 emlayer_restore = "snapshots/PostKS-emlayer.pt"

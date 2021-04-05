@@ -126,7 +126,7 @@ def build_vocab(path, n_vocab):
 
 def load_data(path, vocab, samples_path):
     if not os.path.exists(samples_path):
-        os.mkdir(samples_path)
+        os.makedirs(samples_path)
     # 如果样本目录中存在样本，说明之前处理好了，直接返回
     samples_paths = os.listdir(samples_path)
     if len(samples_paths) != 0:
