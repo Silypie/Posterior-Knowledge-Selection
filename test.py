@@ -90,6 +90,7 @@ def evaluate(model, test_loader, device, vocab, output_file_name):
                 break
 
     # 计算Distinct
+    all_responses = all_responses.strip()
     distinct_1 = InterDistinctMetric.compute(text=all_responses, ngram=1).value()
     distinct_2 = InterDistinctMetric.compute(text=all_responses, ngram=2).value()
     # 最终结果
