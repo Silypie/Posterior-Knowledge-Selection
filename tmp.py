@@ -7,6 +7,9 @@ from threading import main_thread
 from utils import WizardDataset, build_vocab, get_data_loader
 from tqdm import tqdm
 from nltk import word_tokenize
+import rouge
+import re
+from parlai.core.metrics import RougeMetric
 
 file_names = ["test"]
 save_names = ["test_seen"]
@@ -58,8 +61,44 @@ def origin_sentence():
         print('K: ',origin(src_K[0], vocab))
         print('tgt_y: ',origin(tgt_y, vocab))
 
+def cal_rouge():
+    evaluator = rouge.Rouge(metrics=['rouge-n', 'rouge-l'], max_n=2)
+
+    hypothesis_1 = "King Norodom Sihanouk has declined requests to chair a summit of Cambodia 's top political leaders , saying the meeting would not bring any progress in deadlocked negotiations to form a government .\nGovernment and opposition parties have asked King Norodom Sihanouk to host a summit meeting after a series of post-election negotiations between the two opposition groups and Hun Sen 's party to form a new government failed .\nHun Sen 's ruling party narrowly won a majority in elections in July , but the opposition _ claiming widespread intimidation and fraud _ has denied Hun Sen the two-thirds vote in parliament required to approve the next government .\n"
+    references_1 = ["Prospects were dim for resolution of the political crisis in Cambodia in October 1998.\nPrime Minister Hun Sen insisted that talks take place in Cambodia while opposition leaders Ranariddh and Sam Rainsy, fearing arrest at home, wanted them abroad.\nKing Sihanouk declined to chair talks in either place.\nA U.S. House resolution criticized Hun Sen's regime while the opposition tried to cut off his access to loans.\nBut in November the King announced a coalition government with Hun Sen heading the executive and Ranariddh leading the parliament.\nLeft out, Sam Rainsy sought the King's assurance of Hun Sen's promise of safety and freedom for all politicians."]
+
+    hypothesis_2 = "China 's government said Thursday that two prominent dissidents arrested this week are suspected of endangering national security _ the clearest sign yet Chinese leaders plan to quash a would-be opposition party .\nOne leader of a suppressed new political party will be tried on Dec. 17 on a charge of colluding with foreign enemies of China '' to incite the subversion of state power , '' according to court documents given to his wife on Monday .\nWith attorneys locked up , harassed or plain scared , two prominent dissidents will defend themselves against charges of subversion Thursday in China 's highest-profile dissident trials in two years .\n"
+    references_2 = ["Hurricane Mitch, category 5 hurricane, brought widespread death and destruction to Central American.\nEspecially hard hit was Honduras where an estimated 6,076 people lost their lives.\nThe hurricane, which lingered off the coast of Honduras for 3 days before moving off, flooded large areas, destroying crops and property.\nThe U.S. and European Union were joined by Pope John Paul II in a call for money and workers to help the stricken area.\nPresident Clinton sent Tipper Gore, wife of Vice President Gore to the area to deliver much needed supplies to the area, demonstrating U.S. commitment to the recovery of the region.\n"]
+
+    all_hypothesis = [hypothesis_1, hypothesis_2]
+    all_references = [references_1, references_2]
+
+    print(evaluator.get_scores(normalize_answer(hypothesis_1), normalize_answer(references_1[0])))
+    print('*'*40)
+    s = RougeMetric.compute_many(hypothesis_1, references_1) # references必须是列表
+    print(s)
+    print('上面可以证明py-rouge与parl计算rouge的结果相同，parl只能一次计算一对')
+    print('1 的结果：', evaluator.get_scores(hypothesis_1, references_1[0]))
+    print('2 的结果：', evaluator.get_scores(hypothesis_2, references_2[0]))
+    print('总的结果：', evaluator.get_scores(all_hypothesis, all_references))
+    print('可以看出多组数据直接取平均即可')
+
+def normalize_answer(s):
+    """
+    Lower text and remove punctuation, articles and extra whitespace.
+    """
+    re_art = re.compile(r'\b(a|an|the)\b')
+    re_punc = re.compile(r'[!"#$%&()*+,-./:;<=>?@\[\]\\^`{|}~_\']')
+    s = s.lower()
+    s = re_punc.sub(' ', s)
+    s = re_art.sub(' ', s)
+    # TODO: this could almost certainly be faster with a regex \s+ -> ' '
+    s = ' '.join(s.split())
+    return s
+
 if __name__ == '__main__':
     # cal_length()
     # datas = json.load('./data/')
-    origin_sentence()
+    # origin_sentence()
+    cal_rouge()
     pass
