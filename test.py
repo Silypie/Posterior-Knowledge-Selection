@@ -6,7 +6,7 @@ import params
 import argparse
 from utils import init_model, Vocabulary, build_vocab, load_data, get_data_loader
 from model import PostKS
-from parlai.core.metrics import RougeMetric
+from parlai.core.metrics import RougeMetric, BleuMetric
 
 
 def parse_arguments():
@@ -15,7 +15,7 @@ def parse_arguments():
                    help='number of epochs for test')
     p.add_argument('-unseen', default=False, action='store_true',
                    help='whether test unseen dataset')
-    p.add_argument('-output', type=str, default='',
+    p.add_argument('-output', type=str, default='output',
                     help='output file name')
     return p.parse_args()
 
@@ -26,6 +26,7 @@ def evaluate(model, test_loader, device, vocab, output_file_name):
     # total_loss = 0
     # n_vocab = params.n_vocab
     rouge = {'rouge-1':0.0, 'rouge-2':0.0, 'rouge-L':0.0}
+    bleu = {'bleu-1':0.0, 'bleu-2':0.0, 'bleu-3':0.0, 'bleu-4':0.0}
     count = 0
 
     with open(output_file_name, 'w') as f:
@@ -67,21 +68,26 @@ def evaluate(model, test_loader, device, vocab, output_file_name):
                 f.write('response: ' + response + '\n' + 'target: ' + target + '\n\n')
                 count +=1
 
-                rouge_score = RougeMetric.compute_many(response, [target]) # references必须是列表
+                rouge_score = RougeMetric.compute_many(response, [target]) # 计算rouge，references必须是列表
                 rouge['rouge-1'] += float(rouge_score[0])
                 rouge['rouge-2'] += float(rouge_score[1])
                 rouge['rouge-L'] += float(rouge_score[2])
 
+                for k in range(1,5):    # 计算bleu
+                    score = BleuMetric.compute(response, [target], k)
+                    bleu['bleu-'+str(k)] += float(score)
+
                 # 每100个句子打印一下
                 if count % 100 ==0:
-                    print("Step [%.4d/%.4d]: rouge-1=%.4f rouge-2=%.4f rouge-L=%.4f"
-                        % (step+1, len(test_loader), rouge['rouge-1']/count, rouge['rouge-2']/count, rouge['rouge-L']/count))
+                    print("Step [%.4d/%.4d]: rouge-1=%.4f rouge-2=%.4f rouge-L=%.4f \t \
+                            bleu-1=%.8f bleu-2=%.8f bleu-3=%.8f bleu-4=%.8f "
+                        % (step+1, len(test_loader), rouge['rouge-1']/count, rouge['rouge-2']/count, rouge['rouge-L']/count, 
+                        bleu['bleu-1']/count, bleu['bleu-2']/count, bleu['bleu-3']/count, bleu['bleu-4']/count, ))
     # 最终结果
-    print("rouge-1=%.4f rouge-2=%.4f rouge-L=%.4f"
-            % (rouge['rouge-1']/count, rouge['rouge-2']/count, rouge['rouge-L']/count))
-
-
-                
+    print("Step [%.4d/%.4d]: rouge-1=%.4f rouge-2=%.4f rouge-L=%.4f \t \
+                bleu-1=%.8f bleu-2=%.8f bleu-3=%.8f bleu-4=%.8f "
+            % (step+1, len(test_loader), rouge['rouge-1']/count, rouge['rouge-2']/count, rouge['rouge-L']/count, 
+            bleu['bleu-1']/count, bleu['bleu-2']/count, bleu['bleu-3']/count, bleu['bleu-4']/count, ))
 
     # total_loss /= len(test_loader)
     # print("nll_loss=%.4f" % (total_loss))

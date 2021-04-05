@@ -9,7 +9,8 @@ from tqdm import tqdm
 from nltk import word_tokenize
 import rouge
 import re
-from parlai.core.metrics import RougeMetric
+from parlai.core.metrics import RougeMetric, BleuMetric
+from torchtext.data.metrics import bleu_score
 
 file_names = ["test"]
 save_names = ["test_seen"]
@@ -96,9 +97,25 @@ def normalize_answer(s):
     s = ' '.join(s.split())
     return s
 
+def cal_bleu():
+    hypothesis_1 = "King Norodom Sihanouk has declined requests to chair a summit of Cambodia 's top political leaders , saying the meeting would not bring any progress in deadlocked negotiations to form a government .\nGovernment and opposition parties have asked King Norodom Sihanouk to host a summit meeting after a series of post-election negotiations between the two opposition groups and Hun Sen 's party to form a new government failed .\nHun Sen 's ruling party narrowly won a majority in elections in July , but the opposition _ claiming widespread intimidation and fraud _ has denied Hun Sen the two-thirds vote in parliament required to approve the next government .\n"
+    references_1 = ["Prospects were dim for resolution of the political crisis in Cambodia in October 1998.\nPrime Minister Hun Sen insisted that talks take place in Cambodia while opposition leaders Ranariddh and Sam Rainsy, fearing arrest at home, wanted them abroad.\nKing Sihanouk declined to chair talks in either place.\nA U.S. House resolution criticized Hun Sen's regime while the opposition tried to cut off his access to loans.\nBut in November the King announced a coalition government with Hun Sen heading the executive and Ranariddh leading the parliament.\nLeft out, Sam Rainsy sought the King's assurance of Hun Sen's promise of safety and freedom for all politicians."]
+    for k in range(1,5):
+        score = BleuMetric.compute(hypothesis_1, references_1, k)
+        print(float(score))
+    print('*'*50)
+    candidate_corpus = [hypothesis_1.split(' ')]
+    references_corpus = [[references_1[0].split(' ')]]
+    # print(candidate_corpus)
+    # print(references_corpus)
+    for k in range(1,5):
+        weights = [1 / k for _ in range(k)]
+        print(bleu_score(candidate_corpus, references_corpus, max_n=k,weights=weights))
+
 if __name__ == '__main__':
     # cal_length()
     # datas = json.load('./data/')
     # origin_sentence()
-    cal_rouge()
+    # cal_rouge()
+    cal_bleu()
     pass
