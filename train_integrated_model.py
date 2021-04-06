@@ -7,9 +7,9 @@ from torch import optim
 import torch.nn as nn
 from torch.nn.utils import clip_grad_norm_
 import params
-from utils import init_model, save_models, \
+from utils import init_model, \
     build_vocab, load_data, get_data_loader, Vocabulary, save_model
-from model import EmbeddingLayer, Encoder, KnowledgeEncoder, Decoder, Manager, PostKS
+from model import PostKS
 
 
 
