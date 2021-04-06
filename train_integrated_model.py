@@ -212,6 +212,10 @@ def main():
     # pre_train knowledge manager
     if args.local_rank == 0:
         print("start pre-training")
+        # 训练开始前删除就得loss.json文件
+        loss_file_name = params.model_root + 'loss.json'
+        if os.path.exists(loss_file_name):
+            os.remove(loss_file_name)
     pre_train(model, optimizer, train_loader, args, device, train_sampler)
     if args.local_rank == 0:
         print("start training")
