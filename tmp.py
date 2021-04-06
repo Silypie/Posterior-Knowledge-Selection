@@ -46,14 +46,14 @@ def origin(tgt_y, vocab):
     tgts = tgt_y # [max_len]
     target = ''
     for tgt in tgts:
-        if tgt.item() == params.EOS:
+        if tgt.item() == params.EOS or tgt.item() == params.PAD:
             break
         target += vocab.itos[tgt.item()] + " "
     target = target[:-1]
     return target
 
-def origin_sentence():
-    dataset = WizardDataset(params.test_samples_path)
+def origin_sentence(path):
+    dataset = WizardDataset(path)
     vocab = build_vocab(params.train_path, params.n_vocab)
     for i in range(3):
         src_X, src_y, src_K, tgt_y = dataset[i]
@@ -112,9 +112,9 @@ def cal_bleu():
         print(bleu_score(candidate_corpus, references_corpus, max_n=k,weights=weights))
 
 if __name__ == '__main__':
-    cal_length()
+    # cal_length()
     # datas = json.load('./data/')
-    # origin_sentence()
+    origin_sentence(path=params.test_seen_samples_path)
     # cal_rouge()
     # cal_bleu()
     pass

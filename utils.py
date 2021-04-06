@@ -166,9 +166,13 @@ def load_data(path, vocab, samples_path):
             # 每轮对话
             for i in range(len(posts)):
                 # 并没有考虑对话历史，只对每轮对话进行知识选择和回复生成
-                # ToDo：跟DiffKS一样可以只使用上一轮对话和当前轮的问题，拼接X：[x_t-1,y_t-1,x_t]
+                # 跟DiffKS一样可以只使用上一轮对话和当前轮的问题，拼接X：[x_t-1,y_t-1,x_t]
                 # 如果当前是一次对话的开始，那么X不用拼接，否则可以在这里修改拼接上一轮对话内容
-                X.append(posts[i])
+                tmp_x = posts[i]
+                # 不是第一轮才需要添加对话历史
+                if i !=0 :
+                    tmp_x = posts[i-1] + ' ' + responses[i-1] + ' ' +tmp_x
+                X.append(tmp_x)
                 y.append(responses[i])
                 K.append(knowledges[i]) # K的每个元素是一轮对话涉及到的所有知识
 
