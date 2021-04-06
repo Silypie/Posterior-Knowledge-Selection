@@ -112,9 +112,9 @@ def cal_bleu():
         print(bleu_score(candidate_corpus, references_corpus, max_n=k,weights=weights))
 
 if __name__ == '__main__':
-    # cal_length()
+    cal_length()
     # datas = json.load('./data/')
     # origin_sentence()
     # cal_rouge()
-    cal_bleu()
+    # cal_bleu()
     pass

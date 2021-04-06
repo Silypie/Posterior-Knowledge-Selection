@@ -6,7 +6,7 @@ import params
 import argparse
 from utils import init_model, Vocabulary, build_vocab, load_data, get_data_loader
 from model import PostKS
-from parlai.core.metrics import RougeMetric, BleuMetric, InterDistinctMetric
+from parlai.core.metrics import RougeMetric, BleuMetric, InterDistinctMetric, F1Metric
 from rich import print
 
 
@@ -28,20 +28,18 @@ def evaluate(model, test_loader, device, vocab, output_file_name):
     # n_vocab = params.n_vocab
     rouge = {'rouge-1':0.0, 'rouge-2':0.0, 'rouge-L':0.0}
     bleu = {'bleu-1':0.0, 'bleu-2':0.0, 'bleu-3':0.0, 'bleu-4':0.0}
+    knowledge_F1 = 0.0
     count = 0
     all_responses = ""
 
     with open(output_file_name, 'w') as f:
         for step, (src_X, _, src_K, tgt_y) in enumerate(test_loader):
             src_X = src_X.to(device)
-            src_K = src_K.to(device)
+            src_K = src_K.to(device) # [n_batch, n_knowledge, 100]
             tgt_y = tgt_y.to(device) # [n_batch, max_len]
 
             outputs = model.forward(src_X, _, src_K, tgt_y, 0, False, True) # [max_len, n_batch, self.n_vocab]
-
             outputs = outputs.transpose(0, 1).contiguous()  # [n_batch, max_len, self.n_vocab]
-
-            
 
             for i in range(outputs.size(0)):
                 output = outputs[i] # [max_len, self.n_vocab]
@@ -53,6 +51,8 @@ def evaluate(model, test_loader, device, vocab, output_file_name):
                         break
                     response += vocab.itos[idx.item()] + " "
                 response = response[:-1]
+                # 保留全部的回复，用于计算distinct
+                all_responses += ' ' + response
 
                 tgts = tgt_y[i] # [max_len]
                 target = ''
@@ -64,27 +64,40 @@ def evaluate(model, test_loader, device, vocab, output_file_name):
                 # 将预测句和目标句保存到文件
                 f.write('response: ' + response + '\n' + 'target: ' + target + '\n\n')
                 count +=1
-                # 保留全部的回复，用于计算distinct
-                all_responses += ' ' + target
+                
+                # 当前轮的所有知识字符串
+                knowledges = []
+                kns = src_K[i] # [n_knowledge, 100]
+                for j in range(kns.size(0)):
+                    kn = kns[j]
+                    knowledge = ''
+                    for k_idx in kn:
+                        if k_idx.item() == params.PAD:
+                            break
+                        knowledge += vocab.itos[k_idx.item()] + ' '
+                    knowledges.append(knowledge[:-1])
 
-                rouge_score = RougeMetric.compute_many(response, [target]) # 计算rouge，references必须是列表
+                # 计算rouge
+                rouge_score = RougeMetric.compute_many(response, [target]) # references必须是列表
                 rouge['rouge-1'] += float(rouge_score[0])
                 rouge['rouge-2'] += float(rouge_score[1])
                 rouge['rouge-L'] += float(rouge_score[2])
 
-                for k in range(1,5):    # 计算bleu
+                # 计算bleu
+                for k in range(1,5):
                     score = BleuMetric.compute(response, [target], k)
                     bleu['bleu-'+str(k)] += float(score)
 
-                
+                # 计算knowledge F1
+                knowledge_F1 += float(F1Metric.compute(response, knowledges))
 
                 # 每100个句子打印一下
                 if count % 100 ==0:
                     print("Step [%.4d/%.4d]: rouge-1=%.4f rouge-2=%.4f rouge-L=%.4f \
-                            bleu-1=%.8f bleu-2=%.8f bleu-3=%.8f bleu-4=%.8f "
+                            bleu-1=%.8f bleu-2=%.8f bleu-3=%.8f bleu-4=%.8f knowledge_F1=%.4f"
                         % (step+1, len(test_loader), rouge['rouge-1']/count, rouge['rouge-2']/count, rouge['rouge-L']/count, 
-                        bleu['bleu-1']/count, bleu['bleu-2']/count, bleu['bleu-3']/count, bleu['bleu-4']/count, ))
-            if step == 25:
+                        bleu['bleu-1']/count, bleu['bleu-2']/count, bleu['bleu-3']/count, bleu['bleu-4']/count, knowledge_F1/count))
+            if step == 50:
                 break
 
     # 计算Distinct
@@ -92,12 +105,13 @@ def evaluate(model, test_loader, device, vocab, output_file_name):
     distinct_1 = InterDistinctMetric.compute(text=all_responses, ngram=1).value()
     distinct_2 = InterDistinctMetric.compute(text=all_responses, ngram=2).value()
     # 最终结果
+    print('Final Result: ')
     print("rouge-1=%.4f rouge-2=%.4f rouge-L=%.4f \
                 bleu-1=%.8f bleu-2=%.8f bleu-3=%.8f bleu-4=%.8f \
-                distinct-1=%.4f distinct-2=%.4f"
+                distinct-1=%.4f distinct-2=%.4f knowledge_F1=%.4f"
             % (rouge['rouge-1']/count, rouge['rouge-2']/count, rouge['rouge-L']/count, 
             bleu['bleu-1']/count, bleu['bleu-2']/count, bleu['bleu-3']/count, bleu['bleu-4']/count, 
-            distinct_1, distinct_2))
+            distinct_1, distinct_2, knowledge_F1/count))
 
 
 def main():
