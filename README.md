@@ -41,12 +41,10 @@ Type third Knowledge: i have brown hair.
 
 you: hi ! i work as a gourmet cook .
 bot(response): i don't like carrots . i throw them away . # reponse can change based on training.
+```
 
-
-<br><br>
 ## DataSet
 - I only use "self_original_no_cands" in Persona-chat released by ParlAI
 
-<br><br>
-#### Distinct
+## Distinct
 Distinct-1 and distinct-2 are measured as the total number of distinct bigrams/unigrams in the responses divided by the total number of tokens.
