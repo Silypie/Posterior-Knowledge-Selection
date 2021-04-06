@@ -93,7 +93,6 @@ def normalize_answer(s):
     s = s.lower()
     s = re_punc.sub(' ', s)
     s = re_art.sub(' ', s)
-    # TODO: this could almost certainly be faster with a regex \s+ -> ' '
     s = ' '.join(s.split())
     return s
 

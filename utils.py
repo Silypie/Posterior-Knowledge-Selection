@@ -64,6 +64,7 @@ def save_model(net, filename):
     """Save trained model."""
     if not os.path.exists(params.model_root):
         os.makedirs(params.model_root)
+    # ToDo: 根据loss保留模型
     torch.save(net.state_dict(), filename)
     print("save pretrained model to: {}".format(filename))
 

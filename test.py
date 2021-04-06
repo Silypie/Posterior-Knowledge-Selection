@@ -7,6 +7,7 @@ import argparse
 from utils import init_model, Vocabulary, build_vocab, load_data, get_data_loader
 from model import PostKS
 from parlai.core.metrics import RougeMetric, BleuMetric, InterDistinctMetric
+from rich import print
 
 
 def parse_arguments():
@@ -40,12 +41,7 @@ def evaluate(model, test_loader, device, vocab, output_file_name):
 
             outputs = outputs.transpose(0, 1).contiguous()  # [n_batch, max_len, self.n_vocab]
 
-            # 不需要计算loss
-            # loss = NLLLoss(outputs.view(-1, n_vocab),
-            #                 tgt_y.contiguous().view(-1))
-            # total_loss += loss.item()
-            # if step % 10 ==0:
-            #     print("Step [%.4d/%.4d]: NLLLoss=%.4f" % (step, len(test_loader), loss.item()))
+            
 
             for i in range(outputs.size(0)):
                 output = outputs[i] # [max_len, self.n_vocab]
@@ -80,9 +76,11 @@ def evaluate(model, test_loader, device, vocab, output_file_name):
                     score = BleuMetric.compute(response, [target], k)
                     bleu['bleu-'+str(k)] += float(score)
 
+                
+
                 # 每100个句子打印一下
                 if count % 100 ==0:
-                    print("Step [%.4d/%.4d]: rouge-1=%.4f rouge-2=%.4f rouge-L=%.4f \n\t \
+                    print("Step [%.4d/%.4d]: rouge-1=%.4f rouge-2=%.4f rouge-L=%.4f \
                             bleu-1=%.8f bleu-2=%.8f bleu-3=%.8f bleu-4=%.8f "
                         % (step+1, len(test_loader), rouge['rouge-1']/count, rouge['rouge-2']/count, rouge['rouge-L']/count, 
                         bleu['bleu-1']/count, bleu['bleu-2']/count, bleu['bleu-3']/count, bleu['bleu-4']/count, ))
@@ -94,15 +92,12 @@ def evaluate(model, test_loader, device, vocab, output_file_name):
     distinct_1 = InterDistinctMetric.compute(text=all_responses, ngram=1).value()
     distinct_2 = InterDistinctMetric.compute(text=all_responses, ngram=2).value()
     # 最终结果
-    print("rouge-1=%.4f rouge-2=%.4f rouge-L=%.4f \t \
-                bleu-1=%.8f bleu-2=%.8f bleu-3=%.8f bleu-4=%.8f \n\t \
+    print("rouge-1=%.4f rouge-2=%.4f rouge-L=%.4f \
+                bleu-1=%.8f bleu-2=%.8f bleu-3=%.8f bleu-4=%.8f \
                 distinct-1=%.4f distinct-2=%.4f"
             % (rouge['rouge-1']/count, rouge['rouge-2']/count, rouge['rouge-L']/count, 
             bleu['bleu-1']/count, bleu['bleu-2']/count, bleu['bleu-3']/count, bleu['bleu-4']/count, 
             distinct_1, distinct_2))
-
-    # total_loss /= len(test_loader)
-    # print("nll_loss=%.4f" % (total_loss))
 
 
 def main():
