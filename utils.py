@@ -60,13 +60,33 @@ def init_model(net,device, restore=None, is_test=False):
     return net
 
 
-def save_model(net, filename):
+def save_model(net, filename, loss):
     """Save trained model."""
     if not os.path.exists(params.model_root):
         os.makedirs(params.model_root)
-    # ToDo: 根据loss保留模型
-    torch.save(net.state_dict(), filename)
-    print("save pretrained model to: {}".format(filename))
+    loss_file_name = params.model_root + 'loss.json'
+
+    # 根据loss保留模型
+    if not os.path.exists(loss_file_name):
+        with open(loss_file_name, 'w', encoding='utf-8') as f:
+            d = {'loss':loss}
+            json.dump(d, f)
+            torch.save(net.state_dict(), filename)
+            print("save pretrained model to: {}".format(filename))
+            return
+    else:
+        with open(loss_file_name, 'r', encoding='utf-8') as f:
+            d = json.load(f)
+            old_loss = d['loss']
+    
+    if old_loss > loss:
+        torch.save(net.state_dict(), filename)
+        with open(loss_file_name, 'w', encoding='utf-8') as f:
+            d = {'loss':loss}
+            json.dump(d, f)
+        print("save pretrained model to: {}".format(filename))
+    else:
+        print('old loss less than new loss')
 
 
 def save_models(model, filenames):
