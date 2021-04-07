@@ -14,7 +14,6 @@ For decoder, I apply Hierarchical Gated Fusion Unit (HGFU) [[Yao et al. 2017](ht
 - nltk
 - nltk.download('punkt')
 
-<br><br>
 ## Train PostKS model
 #### If you run train, vocab.json and trained parameters will be saved. Then you can play demo.
 ```
