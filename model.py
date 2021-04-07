@@ -5,7 +5,8 @@ import torch.nn as nn
 import torch.nn.utils.rnn as rnn
 import torch.nn.functional as F
 from torchnlp.word_to_vector import GloVe
-from utils import gumbel_softmax
+# from utils import gumbel_softmax
+from torch.nn.functional import gumbel_softmax
 import params
 
 class EmbeddingLayer(nn.Module):
@@ -97,7 +98,7 @@ class KnowledgeEncoder(nn.Module):
              or (B, T), which is y (response)
         :return:
             encoded knowledge or encoded response in shape (B, N, 2*H)
-            if the length of knowledge is not 0, shape: (n_batch, N)
+            if the length of knowledge is 0, shape: (n_batch, N)
         '''
         if len(K.shape) == 3:  # K: [n_batch, N, seq_len]
             n_batch = K.size(0)
@@ -109,8 +110,8 @@ class KnowledgeEncoder(nn.Module):
             for i in range(N):
                 k = inputs[i].transpose(0, 1)  # [seq_len, n_batch, n_embed]
                 seq_lengths = torch.sum(K[:, i] > 0, dim=-1) # [n_batch]
-                first_not_eos = K[:, i, 0] != 3 # [n_batch]
-                knowledge_length[i] = first_not_eos
+                first_is_eos = K[:, i, 0] == 3 # [n_batch]
+                knowledge_length[i] = first_is_eos
                 packed_inputs = rnn.pack_padded_sequence(k, seq_lengths.cpu(), enforce_sorted=False)
                 _, hidden = self.gru(packed_inputs)  # hidden: [2*n_layer, n_batch, n_hidden]
                 hidden = hidden.view(self.n_layer, 2, n_batch, self.n_hidden)
@@ -151,23 +152,24 @@ class Manager(nn.Module):
         :param K:
             encoded knowledge in shape (B, N, 2*H)
         :param knowledge_length:
-            if the length of knowledge is not 0, shape: (n_batch, N)
+            if the length of knowledge is 0, shape: (n_batch, N)
         :return:
             prior, posterior, selected knowledge, selected knowledge logits for BOW_loss
         '''
         if y is not None:   # 训练时
-            prior = F.log_softmax(torch.bmm(x.unsqueeze(1), K.transpose(-1, -2)), dim=-1).squeeze(1) # [n_batch, N]
+            # 将长度为0的知识对应的可能性置为0，即不考虑，保证满足prior为log-probabilities, sum(posterior)=1
+            prior_logits = torch.bmm(x.unsqueeze(1), K.transpose(-1, -2)).squeeze(1) # [n_batch, N]
+            prior_logits.masked_fill_(knowledge_length, -1e9)
+            prior = F.log_softmax(prior_logits, dim=-1)
+
             response = self.mlp(torch.cat((x, y), dim=-1))  # response: [n_batch, 2*n_hidden]
             K = K.transpose(-1, -2)  # K: [n_batch, 2*n_hidden, N]
             posterior_logits = torch.bmm(response.unsqueeze(1), K).squeeze(1)  # [n_batch, N]
+            posterior_logits.masked_fill_(knowledge_length, -1e9)
             posterior = F.softmax(posterior_logits, dim=-1)
 
-            # 将长度为0的知识对应的值置为0，即不考虑
-            prior = torch.mul(prior, knowledge_length)
-            posterior_logits = torch.mul(posterior_logits, knowledge_length)
-            posterior = torch.mul(posterior, knowledge_length)
-
-            k_idx = gumbel_softmax(posterior_logits, self.temperature, self.mlp.weight.device)  # k_idx: [n_batch, N(one_hot)]
+            # k_idx = gumbel_softmax(posterior_logits, self.temperature, self.mlp.weight.device)  # k_idx: [n_batch, N(one_hot)]
+            k_idx = gumbel_softmax(posterior_logits, self.temperature, hard=True) # k_idx: [n_batch, N(one_hot)]
             k_i = torch.bmm(K, k_idx.unsqueeze(2)).squeeze(2)  # k_i: [n_batch, 2*n_hidden] 获取选择的知识的hidden
             k_logits = F.log_softmax(self.mlp_k(k_i), dim=-1)  # k_logits: [n_batch, n_vocab] 根据知识得到词的分布
 
@@ -175,9 +177,10 @@ class Manager(nn.Module):
         else:   # 测试时
             n_batch = K.size(0)
             k_i = torch.Tensor(n_batch, 2*self.n_hidden).to(self.mlp.weight.device) # 存储每个样本选择的知识的hidden
-            prior = F.log_softmax(torch.bmm(x.unsqueeze(1), K.transpose(-1, -2)), dim=-1).squeeze(1) # [n_batch, N]
-            # 将长度为0的知识对应的值置为0，即不考虑
-            prior = torch.mul(prior, knowledge_length)
+            # 将长度为0的知识对应的可能性置为0，即不考虑
+            prior_logits = torch.bmm(x.unsqueeze(1), K.transpose(-1, -2)).squeeze(1) # [n_batch, N]
+            prior_logits.masked_fill_(knowledge_length, -1e9)
+            prior = F.log_softmax(prior_logits, dim=-1)
 
             k_idx = prior.max(1)[1].unsqueeze(1)  # k_idx: [n_batch, 1] 直接根据先验分布选择的知识索引
             for i in range(n_batch):
