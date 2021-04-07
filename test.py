@@ -70,12 +70,13 @@ def evaluate(model, test_loader, device, vocab, output_file_name):
                 kns = src_K[i] # [n_knowledge, 100]
                 for j in range(kns.size(0)):
                     kn = kns[j]
-                    knowledge = ''
-                    for k_idx in kn:
-                        if k_idx.item() == params.PAD:
-                            break
-                        knowledge += vocab.itos[k_idx.item()] + ' '
-                    knowledges.append(knowledge[:-1])
+                    if kn[0] != params.EOS:
+                        knowledge = ''
+                        for k_idx in kn:
+                            if k_idx.item() == params.PAD:
+                                break
+                            knowledge += vocab.itos[k_idx.item()] + ' '
+                        knowledges.append(knowledge[:-1])
 
                 # 计算rouge
                 rouge_score = RougeMetric.compute_many(response, [target]) # references必须是列表
