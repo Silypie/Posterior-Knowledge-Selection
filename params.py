@@ -20,7 +20,7 @@ test_unseen_path = "data/prepared_data/test_unseen.json"
 test_unseen_samples_path = "data/prepared_data/test_unseen__samples/"
 test_unseen_output_path = "output/unseen/"
 
-model_root = "snapshots"
+model_root = "snapshots/"
 emlayer_restore = "snapshots/PostKS-emlayer.pt"
 encoder_restore = "snapshots/PostKS-encoder.pt"
 Kencoder_restore = "snapshots/PostKS-Kencoder.pt"
