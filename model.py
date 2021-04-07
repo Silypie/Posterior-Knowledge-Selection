@@ -33,16 +33,6 @@ class Encoder(nn.Module):
         self.n_hidden = n_hidden
         self.n_layer = n_layer
         self.embedding = emlayer
-        # if vocab is None:
-        #     self.embedding = nn.Embedding(n_vocab, n_embed)
-        # else:
-        #     embedding = torch.Tensor(n_vocab, n_embed)
-        #     vectors = GloVe()
-        #     for word in vocab.stoi:
-        #         if word in vectors:
-        #             embedding[vocab.stoi[word]] = vectors[word]
-        #     self.embedding = nn.Embedding.from_pretrained(embedding)
-        #     print("encoder embedding is initialized with Glove")
         self.gru = nn.GRU(input_size=n_embed, hidden_size=n_hidden,
                           num_layers=n_layer, bidirectional=True)
 
@@ -78,16 +68,6 @@ class KnowledgeEncoder(nn.Module):
         self.n_hidden = n_hidden
         self.n_layer = n_layer
         self.embedding = emlayer
-        # if vocab is None:
-        #     self.embedding = nn.Embedding(n_vocab, n_embed)
-        # else:
-        #     embedding = torch.Tensor(n_vocab, n_embed)
-        #     vectors = GloVe()
-        #     for word in vocab.stoi:
-        #         if word in vectors:
-        #             embedding[vocab.stoi[word]] = vectors[word]
-        #     self.embedding = nn.Embedding.from_pretrained(embedding)
-        #     print("Kencoder embedding is initialized with Glove")
         self.gru = nn.GRU(input_size=n_embed, hidden_size=n_hidden,
                           num_layers=n_layer, bidirectional=True)
 
@@ -224,16 +204,6 @@ class Decoder(nn.Module):  # Hierarchical Gated Fusion Unit
         self.n_hidden = n_hidden
         self.n_layer = n_layer
         self.embedding = emlayer
-        # if vocab is None:
-        #     self.embedding = nn.Embedding(n_vocab, n_embed)
-        # else:
-        #     embedding = torch.Tensor(n_vocab, n_embed)
-        #     vectors = GloVe()
-        #     for word in vocab.stoi:
-        #         if word in vectors:
-        #             embedding[vocab.stoi[word]] = vectors[word]
-        #     self.embedding = nn.Embedding.from_pretrained(embedding)
-        #     print("decoder embedding is initialized with Glove")
         self.attention = Attention(n_hidden)
         self.y_weight = nn.Linear(n_hidden, n_hidden)
         self.k_weight = nn.Linear(n_hidden, n_hidden)
@@ -291,14 +261,6 @@ class PostKS(nn.Module):
         self.Kencoder = KnowledgeEncoder(n_vocab, n_embed, n_hidden, n_layer, vocab, self.emlayer)
         self.manager = Manager(n_hidden, n_vocab, temperature)
         self.decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer, vocab, self.emlayer)
-    
-    # def pre_forward(self, src_X, src_y, src_K):
-    #     _, _, x = self.encoder(src_X)
-    #     y = self.Kencoder(src_y)
-    #     K, knowledge_length = self.Kencoder(src_K)
-    #     _, _, _, k_logits = self.manager(x, y, K, knowledge_length) # k_logits: [n_batch, n_vocab]
-
-    #     return k_logits
 
     def forward(self, src_X, src_y, src_K, tgt_y, trf, pre_train=False, is_test=False):
         if pre_train:
