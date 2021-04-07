@@ -42,6 +42,7 @@ def pre_train(model, optimizer, train_loader, args, device, train_sampler):
         if train_sampler is not None:
             train_sampler.set_epoch(epoch)
         b_loss = 0
+        b_loss_epoch = 0
         for step, (src_X, src_y, src_K, _) in enumerate(train_loader):
             src_X = src_X.to(device)
             src_y = src_y.to(device)
@@ -59,6 +60,7 @@ def pre_train(model, optimizer, train_loader, args, device, train_sampler):
             clip_grad_norm_(parameters, args.grad_clip)
             optimizer.step()
             b_loss += bow_loss.item()
+            b_loss_epoch += bow_loss.item()
             if args.local_rank == 0:
                 print("Epoch [%.1d/%.1d] Step [%.4d/%.4d]: bow_loss=%.4f" % (epoch + 1, args.pre_epoch,
                                                                              step + 1, len(train_loader),
@@ -73,9 +75,9 @@ def pre_train(model, optimizer, train_loader, args, device, train_sampler):
             #                                                                  b_loss))
             #     b_loss = 0
     
-    # save model
-    if args.local_rank == 0:
-        save_model(model, params.integrated_restore)
+        # save model
+        if args.local_rank == 0:
+            save_model(model, params.integrated_restore, b_loss_epoch/len(train_loader))
 
 
 def train(model, optimizer, train_loader, args, device, train_sampler):
@@ -91,6 +93,7 @@ def train(model, optimizer, train_loader, args, device, train_sampler):
         k_loss = 0
         n_loss = 0
         t_loss = 0
+        t_loss_epoch = 0
         for step, (src_X, src_y, src_K, tgt_y) in enumerate(train_loader):
             src_X = src_X.to(device)
             src_y = src_y.to(device)
@@ -120,6 +123,9 @@ def train(model, optimizer, train_loader, args, device, train_sampler):
             k_loss += kldiv_loss.item()
             n_loss += nll_loss.item()
             t_loss += loss.item()
+            t_loss_epoch += loss.item()
+            # ToDo: KLDivLoss与另外两个loss相差太大，数量级不一样，需优化
+            # Epoch [01/01] Step [0001/0258]: total_loss=14.0119 kldiv_loss=0.0183 bow_loss=6.9392 nll_loss=7.0545
             if args.local_rank == 0:
                     print("Epoch [%.2d/%.2d] Step [%.4d/%.4d]: total_loss=%.4f kldiv_loss=%.4f bow_loss=%.4f nll_loss=%.4f"
                       % (epoch + 1, args.n_epoch,
@@ -147,7 +153,7 @@ def train(model, optimizer, train_loader, args, device, train_sampler):
 
         # save model
         if args.local_rank == 0:
-            save_model(model, params.integrated_restore)
+            save_model(model, params.integrated_restore, t_loss_epoch/len(train_loader))
 
 
 def main():
