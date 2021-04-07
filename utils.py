@@ -60,11 +60,10 @@ def init_model(net,device, restore=None, is_test=False):
     return net
 
 
-def save_model(net, filename, loss):
+def save_model(net, filename, loss, loss_file_name):
     """Save trained model."""
     if not os.path.exists(params.model_root):
         os.makedirs(params.model_root)
-    loss_file_name = params.model_root + 'loss.json'
 
     # 根据loss保留模型
     if not os.path.exists(loss_file_name):
@@ -87,17 +86,6 @@ def save_model(net, filename, loss):
         print("save pretrained model to: {}".format(filename))
     else:
         print('old loss less than new loss')
-
-
-def save_models(model, filenames):
-    """Save trained model."""
-    if not os.path.exists(params.model_root):
-        os.makedirs(params.model_root)
-    for i in range(len(model)):
-        net = model[i]
-        filename = filenames[i]
-        torch.save(net.state_dict(), filename)
-        print("save pretrained model to: {}".format(filename))
 
 
 def build_vocab(path, n_vocab):

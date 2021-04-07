@@ -5,7 +5,7 @@ import torch.nn as nn
 import params
 import argparse
 from utils import init_model, Vocabulary, build_vocab, load_data, get_data_loader
-from model import PostKS
+from model import PostKS, Seq2Seq
 from parlai.core.metrics import RougeMetric, BleuMetric, InterDistinctMetric, F1Metric
 from rich import print
 
@@ -18,14 +18,13 @@ def parse_arguments():
                    help='whether test unseen dataset')
     p.add_argument('-output', type=str, default='output',
                     help='output file name')
+    p.add_argument('-model', type='str', default='postks',
+                    help='specify PostKS or Seq2Seq for testing')
     return p.parse_args()
 
 
-def evaluate(model, test_loader, device, vocab, output_file_name):
+def evaluate(model, test_loader, device, vocab, output_file_name, is_seq2seq=False):
     model.eval()
-    # NLLLoss = nn.NLLLoss(reduction='mean', ignore_index=params.PAD)
-    # total_loss = 0
-    # n_vocab = params.n_vocab
     rouge = {'rouge-1':0.0, 'rouge-2':0.0, 'rouge-L':0.0}
     bleu = {'bleu-1':0.0, 'bleu-2':0.0, 'bleu-3':0.0, 'bleu-4':0.0}
     knowledge_F1 = 0.0
@@ -35,10 +34,14 @@ def evaluate(model, test_loader, device, vocab, output_file_name):
     with open(output_file_name, 'w') as f:
         for step, (src_X, _, src_K, tgt_y) in enumerate(test_loader):
             src_X = src_X.to(device)
-            src_K = src_K.to(device) # [n_batch, n_knowledge, 100]
+            if not is_seq2seq:
+                src_K = src_K.to(device) # [n_batch, n_knowledge, 100]
             tgt_y = tgt_y.to(device) # [n_batch, max_len]
 
-            outputs = model.forward(src_X, _, src_K, tgt_y, 0, False, True) # [max_len, n_batch, self.n_vocab]
+            if is_seq2seq:
+                outputs = model.forward(src_X, tgt_y, 0)
+            else:
+                outputs = model.forward(src_X, _, src_K, tgt_y, 0, False, True) # [max_len, n_batch, self.n_vocab]
             outputs = outputs.transpose(0, 1).contiguous()  # [n_batch, max_len, self.n_vocab]
 
             for i in range(outputs.size(0)):
@@ -154,15 +157,23 @@ def main():
     load_data(test_path, vocab, test_samples_path)
     test_sampler, test_loader = get_data_loader(test_samples_path, n_batch, nccl=False) # 暂时在单卡上测试
     print("successfully loaded")
+    if args.model == 'postks':
+        model = PostKS(n_vocab, n_embed, n_hidden, n_layer, temperature, vocab).to(device)
 
-    model = PostKS(n_vocab, n_embed, n_hidden, n_layer, temperature, vocab).to(device)
+        # 测试时不使用数据并行模式，需对参数名进行转换，去除module. 前缀
+        model = init_model(model, device, restore=params.integrated_restore, is_test=True)
+        print('init model with saved parameter')
 
-    # 测试时不使用数据并行模式，需对参数名进行转换，去除module. 前缀
-    model = init_model(model, device, restore=params.integrated_restore, is_test=True)
-    print('init model with saved parameter')
+        print("start evaluating")
+        evaluate(model, test_loader, device, vocab, output_file_name, is_seq2seq=False)
+    elif args.model == 'seq2seq':
+        model = Seq2Seq(n_vocab, n_embed, n_hidden, n_layer, vocab).to(device)
 
-    print("start evaluating")
-    evaluate(model, test_loader, device, vocab, output_file_name)
+        model = init_model(model, device, restore=params.seq2seq_restore, is_test=True)
+        print('init model with saved parameter')
+
+        print("start evaluating")
+        evaluate(model, test_loader, device, vocab, output_file_name, is_seq2seq=True)
 
 
 if __name__ == "__main__":

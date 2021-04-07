@@ -15,17 +15,28 @@ For decoder, I apply Hierarchical Gated Fusion Unit (HGFU) [[Yao et al. 2017](ht
 - nltk.download('punkt')
 
 <br><br>
-## Train model
+## Train PostKS model
 #### If you run train, vocab.json and trained parameters will be saved. Then you can play demo.
 ```
 $ python train.py -pre_epoch 5 -n_epoch 15 -n_batch 128
 $ python train_integrated_model.py -pre_epoch 1 -n_epoch 1 -n_batch 1
 $ CUDA_VISIBLE_DEVICES=0,1,2  python -m torch.distributed.launch --nproc_per_node=3 train_integrated_model.py -pre_epoch 1 -n_epoch 1 -n_batch 5
 ```
+## Train Seq2Seq model
+```
+$
+```
 
 <br><br>
-## test model
-$ python test.py -n_batch 4
+## test PostKS model
+```
+# -unseen for wow unseen dataset
+$ python test.py -n_batch 4 -output 'postks'
+```
+## test Seq2Seq model
+```
+$ python test.py -n_batch 8 -output 'seq2seq' -model 'seq2seq'
+```
 
 <br><br>
 ## Play demo

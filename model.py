@@ -212,7 +212,7 @@ class Decoder(nn.Module):  # Hierarchical Gated Fusion Unit
         self.k_gru = nn.GRU(3 * n_hidden, n_hidden, n_layer)
         self.out = nn.Linear(2 * n_hidden, n_vocab)
 
-    def forward(self, input, k, hidden, encoder_outputs, encoder_mask=None):
+    def forward(self, input, k, hidden, encoder_outputs, encoder_mask=None, is_seq2seq=False):
         '''
         :param input:
             word_input for current time step, in shape (B)
@@ -227,23 +227,37 @@ class Decoder(nn.Module):  # Hierarchical Gated Fusion Unit
         :return:
             decoder output, next hidden state of the decoder, attention weights
         '''
-        embedded = self.embedding(input).unsqueeze(0)  # [1, n_batch, n_embed]
-        attn_weights = self.attention(hidden[-1], encoder_outputs, encoder_mask)  # [n_batch, 1, seq_len]
-        context = torch.bmm(attn_weights, encoder_outputs.transpose(0, 1))  # [n_batch, 1, n_hidden]
-        context = context.transpose(0, 1)  # [1, n_batch, n_hidden]
-        y_input = torch.cat((embedded, context), dim=-1)
-        k_input = torch.cat((k.unsqueeze(0), context), dim=-1)
-        y_output, y_hidden = self.y_gru(y_input, hidden)  # y_hidden: [n_layer, n_batch, n_hidden]
-        k_output, k_hidden = self.k_gru(k_input, hidden)  # k_hidden: [n_layer, n_batch, n_hidden]
-        t_hidden = torch.tanh(torch.cat((self.y_weight(y_hidden), self.k_weight(k_hidden)), dim=-1))
-        # t_hidden: [n_layer, n_batch, 2*n_hidden]
-        r = torch.sigmoid(self.z_weight(t_hidden))  # [n_layer, n_batch, n_hidden]
-        hidden = torch.mul(r, y_hidden) + torch.mul(1-r, k_hidden) # [n_layer, n_batch, n_hidden]
-        output = hidden[-1]  # [n_batch, n_hidden]
-        context = context.squeeze(0)  # [n_batch, n_hidden]
-        output = self.out(torch.cat((output, context), dim=1))  # [n_batch, n_vocab]
-        output = F.log_softmax(output, dim=1)
-        return output, hidden, attn_weights
+        if not is_seq2seq:
+            embedded = self.embedding(input).unsqueeze(0)  # [1, n_batch, n_embed]
+            attn_weights = self.attention(hidden[-1], encoder_outputs, encoder_mask)  # [n_batch, 1, seq_len]
+            context = torch.bmm(attn_weights, encoder_outputs.transpose(0, 1))  # [n_batch, 1, n_hidden]
+            context = context.transpose(0, 1)  # [1, n_batch, n_hidden]
+            y_input = torch.cat((embedded, context), dim=-1)
+            k_input = torch.cat((k.unsqueeze(0), context), dim=-1)
+            y_output, y_hidden = self.y_gru(y_input, hidden)  # y_hidden: [n_layer, n_batch, n_hidden]
+            k_output, k_hidden = self.k_gru(k_input, hidden)  # k_hidden: [n_layer, n_batch, n_hidden]
+            t_hidden = torch.tanh(torch.cat((self.y_weight(y_hidden), self.k_weight(k_hidden)), dim=-1))
+            # t_hidden: [n_layer, n_batch, 2*n_hidden]
+            r = torch.sigmoid(self.z_weight(t_hidden))  # [n_layer, n_batch, n_hidden]
+            hidden = torch.mul(r, y_hidden) + torch.mul(1-r, k_hidden) # [n_layer, n_batch, n_hidden]
+            output = hidden[-1]  # [n_batch, n_hidden]
+            context = context.squeeze(0)  # [n_batch, n_hidden]
+            output = self.out(torch.cat((output, context), dim=1))  # [n_batch, n_vocab]
+            output = F.log_softmax(output, dim=1)
+            return output, hidden, attn_weights
+        else:
+            embedded = self.embedding(input).unsqueeze(0)  # [1, n_batch, n_embed]
+            attn_weights = self.attention(hidden[-1], encoder_outputs, encoder_mask)  # [n_batch, 1, seq_len]
+            context = torch.bmm(attn_weights, encoder_outputs.transpose(0, 1))  # [n_batch, 1, n_hidden]
+            context = context.transpose(0, 1)  # [1, n_batch, n_hidden]
+            y_input = torch.cat((embedded, context), dim=-1)
+            y_output, y_hidden = self.y_gru(y_input, hidden)  # y_hidden: [n_layer, n_batch, n_hidden]
+            output = y_hidden[-1]  # [n_batch, n_hidden]
+            context = context.squeeze(0)  # [n_batch, n_hidden]
+            output = self.out(torch.cat((output, context), dim=1))  # [n_batch, n_vocab]
+            output = F.log_softmax(output, dim=1)
+            return output, hidden, attn_weights
+
 
 
 class PostKS(nn.Module):
@@ -270,6 +284,7 @@ class PostKS(nn.Module):
             prior, posterior, k_i, k_logits = self.manager(x, y, K, knowledge_length) # k_logits: [n_batch, n_vocab]
 
             return k_logits
+
         else:
             encoder_outputs, hidden, x = self.encoder(src_X)
             # 每个批次的最长序列长度不一定等于数据集中的最长序列长度
@@ -301,3 +316,36 @@ class PostKS(nn.Module):
                 return outputs
             else:
                 return prior, posterior, k_logits, outputs
+
+class Seq2Seq(nn.Module):
+    def __init__(self, n_vocab, n_embed, n_hidden, n_layer, vocab=None):
+        super(Seq2Seq, self).__init__()
+        self.n_vocab = n_vocab
+        self.n_embed = n_embed
+        self.n_hidden = n_hidden
+        self.n_layer = n_layer
+        self.vocab = vocab
+
+        self.emlayer = EmbeddingLayer(n_vocab, n_embed, vocab)
+        self.encoder = Encoder(n_vocab, n_embed, n_hidden, n_layer, vocab, self.emlayer)
+        self.decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer, vocab, self.emlayer)
+    
+    def forward(self, src_X, tgt_y, trf):
+        encoder_outputs, hidden, x = self.encoder(src_X)
+        # 每个批次的最长序列长度不一定等于数据集中的最长序列长度
+        encoder_mask = (src_X == 0)[:, :encoder_outputs.size(0)].unsqueeze(1).bool() # fix warning bug
+
+        n_batch = src_X.size(0)
+        max_len = tgt_y.size(1)
+        outputs = torch.zeros(max_len, n_batch, self.n_vocab).to(self.emlayer.embedding.weight.device)
+        hidden = hidden[self.n_layer:]
+
+        output = torch.LongTensor([params.SOS] * n_batch).to(self.emlayer.embedding.weight.device)  # [n_batch]
+        for t in range(max_len):
+            output, hidden, attn_weights = self.decoder(output, None, hidden, encoder_outputs, encoder_mask, is_seq2seq=True)
+            outputs[t] = output
+            is_teacher = random.random() < trf  # teacher forcing ratio
+            top1 = output.data.max(1)[1]
+            output = tgt_y[:, t] if is_teacher else top1
+        
+        return outputs

@@ -21,11 +21,6 @@ test_unseen_samples_path = "data/prepared_data/test_unseen__samples/"
 test_unseen_output_path = "output/unseen/"
 
 model_root = "snapshots/"
-emlayer_restore = "snapshots/PostKS-emlayer.pt"
-encoder_restore = "snapshots/PostKS-encoder.pt"
-Kencoder_restore = "snapshots/PostKS-Kencoder.pt"
-manager_restore = "snapshots/PostKS-manager.pt"
-decoder_restore = "snapshots/PostKS-decoder.pt"
-all_restore=[emlayer_restore ,encoder_restore, Kencoder_restore, manager_restore, decoder_restore]
 
 integrated_restore = "snapshots/PostKS-integrated.pt"
+seq2seq_restore = "snapshots/Seq2Seq-model.pt"
