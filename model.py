@@ -57,6 +57,7 @@ class Encoder(nn.Module):
         outputs = (outputs[:, :, :self.n_hidden] + outputs[:, :, self.n_hidden:])
         # outputs: [seq_len, n_batch, n_hidden]
         encoded = torch.cat((f_hidden, b_hidden), dim=1)  # encoded: [n_batch, 2*n_hidden]
+        # TODO：尝试增加层归一化
         return outputs, hidden, encoded
 
 
