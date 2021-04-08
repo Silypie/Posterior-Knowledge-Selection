@@ -8,3 +8,7 @@ vocab.json
 snapshots/
 .vscode/settings.json
 output/
+send_email.py
+*.ipynb
+*.txt
+runs/*

@@ -10,6 +10,7 @@ import params
 from utils import init_model, \
     build_vocab, load_data, get_data_loader, Vocabulary, save_model
 from model import Seq2Seq
+from torch.utils.tensorboard import SummaryWriter
 
 
 def parse_arguments():
@@ -31,9 +32,12 @@ def parse_arguments():
 
 
 def train(model, optimizer, train_loader, args, device, train_sampler, loss_file_name):
+    if args.local_rank == 0:
+        writer = SummaryWriter('./runs/seq2seq')
     model.train()
     parameters = list(model.parameters())
     NLLLoss = nn.NLLLoss(reduction='mean', ignore_index=params.PAD)
+    step_num = 0
 
     for epoch in range(args.n_epoch):
         if train_sampler is not None:
@@ -43,6 +47,7 @@ def train(model, optimizer, train_loader, args, device, train_sampler, loss_file
         for step, (src_X, src_y, src_K, tgt_y) in enumerate(train_loader):
             src_X = src_X.to(device)
             tgt_y = tgt_y.to(device)
+            step_num += 1
 
             optimizer.zero_grad()
             n_vocab = params.n_vocab
@@ -58,25 +63,30 @@ def train(model, optimizer, train_loader, args, device, train_sampler, loss_file
             n_loss += nll_loss.item()
             n_loss_epoch += nll_loss.item()
             
-            if args.local_rank == 0:
-                    print("Epoch [%.2d/%.2d] Step [%.4d/%.4d]: nll_loss=%.4f"
-                      % (epoch + 1, args.n_epoch,
-                         step + 1, len(train_loader),
-                         n_loss))
-            n_loss = 0
-
-            # if (step + 1) % 50 == 0:
-            #     n_loss /= 50
-            #     if args.local_rank == 0:
+            # if args.local_rank == 0:
             #         print("Epoch [%.2d/%.2d] Step [%.4d/%.4d]: nll_loss=%.4f"
             #           % (epoch + 1, args.n_epoch,
             #              step + 1, len(train_loader),
             #              n_loss))
-            #     n_loss = 0
+            # n_loss = 0
+
+            if (step + 1) % 100 == 0:
+                n_loss /= 100
+                if args.local_rank == 0:
+                    print("Epoch [%.2d/%.2d] Step [%.4d/%.4d]: nll_loss=%.4f"
+                      % (epoch + 1, args.n_epoch,
+                         step + 1, len(train_loader),
+                         n_loss))
+                    # 写入日志
+                    writer.add_scalar('nll_loss', n_loss, step_num)
+                n_loss = 0
 
         # save model
         if args.local_rank == 0:
-            save_model(model, params.integrated_restore, n_loss_epoch/len(train_loader), loss_file_name)
+            save_model(model, params.seq2seq_restore, n_loss_epoch/len(train_loader), loss_file_name)
+            # torch.distributed.barrier()
+    if args.local_rank == 0:
+        writer.close()
 
 
 def main():
@@ -139,11 +149,12 @@ def main():
 
     # 训练开始前删除就得loss.json文件
     loss_file_name = params.model_root + 'Seq2Seq_loss.json'
-    if os.path.exists(loss_file_name):
-        os.remove(loss_file_name)
     
     if args.local_rank == 0:
         print("start training")
+        if os.path.exists(loss_file_name):
+            os.remove(loss_file_name)
+    
     train(model, optimizer, train_loader, args, device, train_sampler, loss_file_name)
 
 

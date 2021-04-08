@@ -23,7 +23,7 @@ $ CUDA_VISIBLE_DEVICES=0,1,2  python -m torch.distributed.launch --nproc_per_nod
 ```
 ## Train Seq2Seq model
 ```
-$
+$ CUDA_VISIBLE_DEVICES=4,5,6  python -m torch.distributed.launch --nproc_per_node=3 train_seq2seq.py -n_epoch 1 -n_batch 5
 ```
 
 <br><br>

@@ -6,10 +6,10 @@ from tqdm import tqdm
 from nltk.tokenize import WordPunctTokenizer
 from nltk import word_tokenize
 
-# file_names = ["test", "test_unseen", "train"]
-# save_names = ["test_seen", "test_unseen", "train"]
-file_names = ["test"]
-save_names = ["test_seen"]
+file_names = ["test", "test_unseen", "train"]
+save_names = ["test_seen", "test_unseen", "train"]
+# file_names = ["test"]
+# save_names = ["test_seen"]
 
 for key, name in zip(file_names, save_names):
     print(key)

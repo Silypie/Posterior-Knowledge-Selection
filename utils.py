@@ -72,20 +72,19 @@ def save_model(net, filename, loss, loss_file_name):
             json.dump(d, f)
             torch.save(net.state_dict(), filename)
             print("save pretrained model to: {}".format(filename))
-            return
     else:
         with open(loss_file_name, 'r', encoding='utf-8') as f:
             d = json.load(f)
             old_loss = d['loss']
     
-    if old_loss > loss:
-        torch.save(net.state_dict(), filename)
-        with open(loss_file_name, 'w', encoding='utf-8') as f:
-            d = {'loss':loss}
-            json.dump(d, f)
-        print("save pretrained model to: {}".format(filename))
-    else:
-        print('old loss less than new loss')
+        if old_loss > loss:
+            torch.save(net.state_dict(), filename)
+            with open(loss_file_name, 'w', encoding='utf-8') as f:
+                d = {'loss':loss}
+                json.dump(d, f)
+            print("save pretrained model to: {}".format(filename))
+        else:
+            print('old loss less than new loss')
 
 
 def build_vocab(path, n_vocab):

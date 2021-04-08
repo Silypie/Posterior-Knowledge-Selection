@@ -10,6 +10,7 @@ import params
 from utils import init_model, \
     build_vocab, load_data, get_data_loader, Vocabulary, save_model
 from model import PostKS
+from torch.utils.tensorboard import SummaryWriter
 
 
 
@@ -37,6 +38,7 @@ def pre_train(model, optimizer, train_loader, args, device, train_sampler, loss_
     model.train()
     parameters = list(model.parameters())
     NLLLoss = nn.NLLLoss(reduction='mean', ignore_index=params.PAD)
+    step_num = 0
 
     for epoch in range(args.pre_epoch):
         if train_sampler is not None:
@@ -47,6 +49,7 @@ def pre_train(model, optimizer, train_loader, args, device, train_sampler, loss_
             src_X = src_X.to(device)
             src_y = src_y.to(device)
             src_K = src_K.to(device)
+            step_num += 1
 
             optimizer.zero_grad()
             n_vocab = params.n_vocab
@@ -61,19 +64,19 @@ def pre_train(model, optimizer, train_loader, args, device, train_sampler, loss_
             optimizer.step()
             b_loss += bow_loss.item()
             b_loss_epoch += bow_loss.item()
-            if args.local_rank == 0:
-                print("Epoch [%.1d/%.1d] Step [%.4d/%.4d]: bow_loss=%.4f" % (epoch + 1, args.pre_epoch,
-                                                                             step + 1, len(train_loader),
-                                                                             b_loss))
-            b_loss = 0
-
-            # if (step + 1) % 50 == 0:
-            #     b_loss /= 50
-            #     if args.local_rank == 0:
-            #         print("Epoch [%.1d/%.1d] Step [%.4d/%.4d]: bow_loss=%.4f" % (epoch + 1, args.pre_epoch,
+            # if args.local_rank == 0:
+            #     print("Epoch [%.1d/%.1d] Step [%.4d/%.4d]: bow_loss=%.4f" % (epoch + 1, args.pre_epoch,
             #                                                                  step + 1, len(train_loader),
             #                                                                  b_loss))
-            #     b_loss = 0
+            # b_loss = 0
+
+            if (step + 1) % 100 == 0:
+                b_loss /= 100
+                if args.local_rank == 0:
+                    print("Epoch [%.1d/%.1d] Step [%.4d/%.4d]: bow_loss=%.4f" % (epoch + 1, args.pre_epoch,
+                                                                             step + 1, len(train_loader),
+                                                                             b_loss))
+                b_loss = 0
     
         # save model
         if args.local_rank == 0:
@@ -81,10 +84,13 @@ def pre_train(model, optimizer, train_loader, args, device, train_sampler, loss_
 
 
 def train(model, optimizer, train_loader, args, device, train_sampler, loss_file_name):
+    if args.local_rank == 0:
+        writer = SummaryWriter('./runs/postks')
     model.train()
     parameters = list(model.parameters())
     NLLLoss = nn.NLLLoss(reduction='mean', ignore_index=params.PAD)
     KLDLoss = nn.KLDivLoss(reduction='batchmean')
+    step_num = 0
 
     for epoch in range(args.n_epoch):
         if train_sampler is not None:
@@ -99,6 +105,7 @@ def train(model, optimizer, train_loader, args, device, train_sampler, loss_file
             src_y = src_y.to(device)
             src_K = src_K.to(device)
             tgt_y = tgt_y.to(device)
+            step_num += 1
 
             optimizer.zero_grad()
             n_vocab = params.n_vocab
@@ -126,34 +133,42 @@ def train(model, optimizer, train_loader, args, device, train_sampler, loss_file
             t_loss_epoch += loss.item()
             # ToDo: KLDivLoss与另外两个loss相差太大，数量级不一样，需优化
             # Epoch [01/01] Step [0001/0258]: total_loss=14.0119 kldiv_loss=0.0183 bow_loss=6.9392 nll_loss=7.0545
-            if args.local_rank == 0:
-                    print("Epoch [%.2d/%.2d] Step [%.4d/%.4d]: total_loss=%.4f kldiv_loss=%.4f bow_loss=%.4f nll_loss=%.4f"
-                      % (epoch + 1, args.n_epoch,
-                         step + 1, len(train_loader),
-                         t_loss, k_loss, b_loss, n_loss))
-            k_loss = 0
-            n_loss = 0
-            b_loss = 0
-            t_loss = 0
-
-            # if (step + 1) % 50 == 0:
-            #     k_loss /= 50
-            #     n_loss /= 50
-            #     b_loss /= 50
-            #     t_loss /= 50
-            #     if args.local_rank == 0:
+            # if args.local_rank == 0:
             #         print("Epoch [%.2d/%.2d] Step [%.4d/%.4d]: total_loss=%.4f kldiv_loss=%.4f bow_loss=%.4f nll_loss=%.4f"
             #           % (epoch + 1, args.n_epoch,
             #              step + 1, len(train_loader),
             #              t_loss, k_loss, b_loss, n_loss))
-            #     k_loss = 0
-            #     n_loss = 0
-            #     b_loss = 0
-            #     t_loss = 0
+            # k_loss = 0
+            # n_loss = 0
+            # b_loss = 0
+            # t_loss = 0
+
+            if (step + 1) % 100 == 0:
+                k_loss /= 100
+                n_loss /= 100
+                b_loss /= 100
+                t_loss /= 100
+                if args.local_rank == 0:
+                    print("Epoch [%.2d/%.2d] Step [%.4d/%.4d]: total_loss=%.4f kldiv_loss=%.4f bow_loss=%.4f nll_loss=%.4f"
+                      % (epoch + 1, args.n_epoch,
+                         step + 1, len(train_loader),
+                         t_loss, k_loss, b_loss, n_loss))
+                    # 写入日志
+                    writer.add_scalar('total_loss', t_loss, step_num)
+                    writer.add_scalars('mini_loss', {'kldiv_loss':k_loss,
+                                    'bow_loss':b_loss,
+                                    'nll_loss': n_loss}, step_num)
+
+                k_loss = 0
+                n_loss = 0
+                b_loss = 0
+                t_loss = 0
 
         # save model
         if args.local_rank == 0:
             save_model(model, params.integrated_restore, t_loss_epoch/len(train_loader), loss_file_name)
+    if args.local_rank == 0:
+        writer.close()
 
 
 def main():
@@ -215,13 +230,15 @@ def main():
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
+    loss_file_name = params.model_root + 'PostKS_loss.json'
+
     # pre_train knowledge manager
     if args.local_rank == 0:
         print("start pre-training")
         # 训练开始前删除就得loss.json文件
-        loss_file_name = params.model_root + 'PostKS_loss.json'
         if os.path.exists(loss_file_name):
             os.remove(loss_file_name)
+
     pre_train(model, optimizer, train_loader, args, device, train_sampler, loss_file_name)
     if args.local_rank == 0:
         print("start training")
