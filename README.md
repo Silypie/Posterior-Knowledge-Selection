@@ -21,6 +21,8 @@ $ python train.py -pre_epoch 5 -n_epoch 15 -n_batch 128
 $ python train_integrated_model.py -pre_epoch 1 -n_epoch 1 -n_batch 1
 $ nohup CUDA_VISIBLE_DEVICES=4,5,6  python -m torch.distributed.launch --nproc_per_node=3 train_integrated_model.py -pre_epoch 5 -n_epoch 15 -n_batch 5 > postks_trainlog.txt 2>&1 &
 
+# 在同一机器上跑多个任务可能需要：--master_addr 127.0.0.2 --master_port 29501
+
 # 训练差异感知的模型
 $ CUDA_VISIBLE_DEVICES=0,1,2  python -m torch.distributed.launch --nproc_per_node=3 train_integrated_model.py -pre_epoch 1 -n_epoch 1 -n_batch 4 -difference -train_path "data/prepared_data/test_seen.json" -train_samples_path "data/prepared_data/tmp_test_samples/"
 ```
