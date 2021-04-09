@@ -4,7 +4,7 @@ import json
 import os
 import params
 from threading import main_thread
-from utils import WizardDataset, build_vocab, get_data_loader
+from utils import Vocabulary, WizardDataset, build_vocab, get_data_loader
 from tqdm import tqdm
 from nltk import word_tokenize
 import rouge
@@ -13,7 +13,7 @@ from parlai.core.metrics import RougeMetric, BleuMetric
 from torchtext.data.metrics import bleu_score
 
 file_names = ["test"]
-save_names = ["test_seen"]
+save_names = ["train"]
 
 def cal_length():
     for name in save_names:
@@ -46,7 +46,7 @@ def origin(tgt_y, vocab):
     tgts = tgt_y # [max_len]
     target = ''
     for tgt in tgts:
-        if tgt.item() == params.EOS or tgt.item() == params.PAD:
+        if tgt.item() == params.PAD:
             break
         target += vocab.itos[tgt.item()] + " "
     target = target[:-1]
@@ -54,9 +54,21 @@ def origin(tgt_y, vocab):
 
 def origin_sentence(path):
     dataset = WizardDataset(path)
-    vocab = build_vocab(params.train_path, params.n_vocab)
-    for i in range(3):
+    if os.path.exists("vocab.json"):
+        vocab = Vocabulary()
+        with open('vocab.json', 'r') as fp:
+            vocab.stoi = json.load(fp)
+
+        for key, value in vocab.stoi.items():
+            vocab.itos.append(key)
+    else:
+        vocab = build_vocab(params.train_path, params.n_vocab)
+    for i in range(4):
         src_X, src_y, src_K, tgt_y = dataset[i]
+        print("x_shape",src_X.shape)
+        print("y.shape", src_y.shape)
+        print("K.shape", src_K.shape)
+        print("tgt_y.shape",tgt_y.shape)
         print('X: ',origin(src_X, vocab))
         print('y: ',origin(src_y, vocab))
         print('K: ',origin(src_K[0], vocab))
@@ -114,7 +126,7 @@ def cal_bleu():
 if __name__ == '__main__':
     # cal_length()
     # datas = json.load('./data/')
-    origin_sentence(path=params.test_seen_samples_path)
+    origin_sentence(path=params.train_samples_path)
     # cal_rouge()
     # cal_bleu()
     pass

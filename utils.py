@@ -275,7 +275,7 @@ def get_data_loader(samples_path, n_batch, nccl):
         data_loader = DataLoader(
             dataset=dataset,
             batch_size=n_batch,
-            num_workers=4,
+            num_workers=2,
             # pin_memory=True,
             sampler=train_sampler
         )
@@ -284,7 +284,7 @@ def get_data_loader(samples_path, n_batch, nccl):
         data_loader = DataLoader(
             dataset=dataset,
             batch_size=n_batch,
-            num_workers=4,
+            num_workers=2,
             shuffle=True
         )
     return train_sampler, data_loader
