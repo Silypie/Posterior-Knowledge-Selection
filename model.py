@@ -137,6 +137,12 @@ class Manager(nn.Module):
         :return:
             prior, posterior, selected knowledge, selected knowledge logits for BOW_loss
         '''
+        # ToDo: 引入知识的差异信息，计算prior_logits和posterior_logits时不采用点积注意力模型
+        # 而是采用加性模型，query保持不变，作为key的知识张量需要再连接上知识差异特征
+
+        # 如果参数选择引入差异信息，则在这里根据上一轮选择的知识(B, 1, 2*H)计算当前轮所有知识的差异信息
+        # 注意：标签是“未选择任何知识”时，将差异特征置0
+
         if y is not None:   # 训练时
             # 将长度为0的知识对应的可能性置为0，即不考虑，保证满足prior为log-probabilities, sum(posterior)=1
             prior_logits = torch.bmm(x.unsqueeze(1), K.transpose(-1, -2)).squeeze(1) # [n_batch, N]

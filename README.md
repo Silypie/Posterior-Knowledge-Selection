@@ -19,7 +19,10 @@ For decoder, I apply Hierarchical Gated Fusion Unit (HGFU) [[Yao et al. 2017](ht
 ```
 $ python train.py -pre_epoch 5 -n_epoch 15 -n_batch 128
 $ python train_integrated_model.py -pre_epoch 1 -n_epoch 1 -n_batch 1
-$ CUDA_VISIBLE_DEVICES=0,1,2  python -m torch.distributed.launch --nproc_per_node=3 train_integrated_model.py -pre_epoch 1 -n_epoch 1 -n_batch 5
+$ nohup CUDA_VISIBLE_DEVICES=4,5,6  python -m torch.distributed.launch --nproc_per_node=3 train_integrated_model.py -pre_epoch 5 -n_epoch 15 -n_batch 5 > postks_trainlog.txt 2>&1 &
+
+# 训练差异感知的模型
+$ CUDA_VISIBLE_DEVICES=0,1,2  python -m torch.distributed.launch --nproc_per_node=3 train_integrated_model.py -pre_epoch 1 -n_epoch 1 -n_batch 4 -difference -train_path "data/prepared_data/test_seen.json" -train_samples_path "data/prepared_data/tmp_test_samples/"
 ```
 ## Train Seq2Seq model
 ```

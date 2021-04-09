@@ -31,6 +31,8 @@ def parse_arguments():
     p.add_argument('-restore', default=False, action='store_true',
                    help='whether restore trained model')
     p.add_argument("--local_rank", type=int, default=0, help="multi gpu traning")
+    p.add_argument('-train_path', type=str, default="data/prepared_data/train.json")
+    p.add_argument('-train_samples_path', type=str, default="data/prepared_data/train_samples/")
     return p.parse_args()
 
 
@@ -182,7 +184,8 @@ def main():
     n_embed = params.n_embed
     n_batch = args.n_batch
     temperature = params.temperature
-    train_path = params.train_path
+    train_path = args.train_path
+    train_samples_path = args.train_samples_path
 
     if args.local_rank == 0:
         print("loading_data...")
@@ -203,11 +206,11 @@ def main():
     if args.local_rank == 0:
         print("successfully build vocab")
         # 只在主进程里处理数据（字符转索引，对齐，分样本保存）
-        load_data(train_path, vocab, params.train_samples_path)
+        load_data(train_path, vocab, train_samples_path)
     
     # 进程同步，防止其他进程在数据还没处理完就读取
     torch.distributed.barrier()
-    train_sampler, train_loader = get_data_loader(params.train_samples_path, n_batch, nccl=nccl_available)
+    train_sampler, train_loader = get_data_loader(train_samples_path, n_batch, nccl=nccl_available)
 
     if args.local_rank == 0:
         print("successfully loaded")
