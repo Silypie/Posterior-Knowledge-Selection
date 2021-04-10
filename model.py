@@ -72,37 +72,18 @@ class KnowledgeEncoder(nn.Module):
         self.gru = nn.GRU(input_size=n_embed, hidden_size=n_hidden,
                           num_layers=n_layer, bidirectional=True)
 
-    def forward(self, K):
+    def forward(self, K, is_last_knowledge=False):
         '''
         :param K:
              Variable of shape (B, n_knowledge(N), T) (knowledge)
              or (B, T), which is y (response)
+             or last_knowledge of shape (B, seq_len(T))
         :return:
             encoded knowledge or encoded response in shape (B, N, 2*H)
             if the length of knowledge is 0, shape: (n_batch, N)
         '''
-        if len(K.shape) == 3:  # K: [n_batch, N, seq_len]
-            n_batch = K.size(0)
-            N = K.size(1)
-            inputs = self.embedding(K)
-            inputs = inputs.transpose(0, 1)  # [N, n_batch, seq_len, n_embed]
-            encoded = torch.zeros(N, n_batch, 2*self.n_hidden)
-            knowledge_length = torch.ones(N, n_batch, dtype=bool)
-            for i in range(N):
-                k = inputs[i].transpose(0, 1)  # [seq_len, n_batch, n_embed]
-                seq_lengths = torch.sum(K[:, i] > 0, dim=-1) # [n_batch]
-                first_is_eos = K[:, i, 0] == 3 # [n_batch]
-                knowledge_length[i] = first_is_eos
-                packed_inputs = rnn.pack_padded_sequence(k, seq_lengths.cpu(), enforce_sorted=False)
-                _, hidden = self.gru(packed_inputs)  # hidden: [2*n_layer, n_batch, n_hidden]
-                hidden = hidden.view(self.n_layer, 2, n_batch, self.n_hidden)
-                f_hidden, b_hidden = hidden[-1]
-                encoded[i] = torch.cat((f_hidden, b_hidden), dim=1)  # encoded: [n_batch, 2*n_hidden]
-            # [n_batch, N, 2*n_hidden], [n_batch, N]
-            return encoded.transpose(0, 1).to(self.gru.weight_ih_l0.device), knowledge_length.transpose(0, 1).to(self.gru.weight_ih_l0.device)
-
-        else:  # [n_batch, seq_len]
-            y = K[:, 1:]    # 不考虑<SOS>
+        if is_last_knowledge:
+            y = K
             n_batch = y.size(0)
             inputs = self.embedding(y)
             inputs = inputs.transpose(0, 1)  # [seq_len, n_batch, n_embed]
@@ -113,6 +94,39 @@ class KnowledgeEncoder(nn.Module):
             f_hidden, b_hidden = hidden[-1]
             encoded = torch.cat((f_hidden, b_hidden), dim=1)  # encoded: [n_batch, 2*n_hidden]
             return encoded
+        else:
+            if len(K.shape) == 3:  # K: [n_batch, N, seq_len]
+                n_batch = K.size(0)
+                N = K.size(1)
+                inputs = self.embedding(K)
+                inputs = inputs.transpose(0, 1)  # [N, n_batch, seq_len, n_embed]
+                encoded = torch.zeros(N, n_batch, 2*self.n_hidden)
+                knowledge_length = torch.ones(N, n_batch, dtype=bool)
+                for i in range(N):
+                    k = inputs[i].transpose(0, 1)  # [seq_len, n_batch, n_embed]
+                    seq_lengths = torch.sum(K[:, i] > 0, dim=-1) # [n_batch]
+                    first_is_eos = K[:, i, 0] == 3 # [n_batch]
+                    knowledge_length[i] = first_is_eos
+                    packed_inputs = rnn.pack_padded_sequence(k, seq_lengths.cpu(), enforce_sorted=False)
+                    _, hidden = self.gru(packed_inputs)  # hidden: [2*n_layer, n_batch, n_hidden]
+                    hidden = hidden.view(self.n_layer, 2, n_batch, self.n_hidden)
+                    f_hidden, b_hidden = hidden[-1]
+                    encoded[i] = torch.cat((f_hidden, b_hidden), dim=1)  # encoded: [n_batch, 2*n_hidden]
+                # [n_batch, N, 2*n_hidden], [n_batch, N]
+                return encoded.transpose(0, 1).to(self.gru.weight_ih_l0.device), knowledge_length.transpose(0, 1).to(self.gru.weight_ih_l0.device)
+
+            else:  # [n_batch, seq_len]
+                y = K[:, 1:]    # 不考虑<SOS>
+                n_batch = y.size(0)
+                inputs = self.embedding(y)
+                inputs = inputs.transpose(0, 1)  # [seq_len, n_batch, n_embed]
+                seq_lengths = torch.sum(y > 0, dim=-1)  # [n_batch]
+                packed_inputs = rnn.pack_padded_sequence(inputs, seq_lengths.cpu(), enforce_sorted=False)
+                _, hidden = self.gru(packed_inputs)  # hidden: [2*n_layer, n_batch, n_hidden]
+                hidden = hidden.view(self.n_layer, 2, n_batch, self.n_hidden)
+                f_hidden, b_hidden = hidden[-1]
+                encoded = torch.cat((f_hidden, b_hidden), dim=1)  # encoded: [n_batch, 2*n_hidden]
+                return encoded
 
 
 class Manager(nn.Module):
@@ -137,12 +151,6 @@ class Manager(nn.Module):
         :return:
             prior, posterior, selected knowledge, selected knowledge logits for BOW_loss
         '''
-        # ToDo: 引入知识的差异信息，计算prior_logits和posterior_logits时不采用点积注意力模型
-        # 而是采用加性模型，query保持不变，作为key的知识张量需要再连接上知识差异特征
-
-        # 如果参数选择引入差异信息，则在这里根据上一轮选择的知识(B, 1, 2*H)计算当前轮所有知识的差异信息
-        # 注意：标签是“未选择任何知识”时，将差异特征置0
-
         if y is not None:   # 训练时
             # 将长度为0的知识对应的可能性置为0，即不考虑，保证满足prior为log-probabilities, sum(posterior)=1
             prior_logits = torch.bmm(x.unsqueeze(1), K.transpose(-1, -2)).squeeze(1) # [n_batch, N]
@@ -167,6 +175,89 @@ class Manager(nn.Module):
             # 将长度为0的知识对应的可能性置为0，即不考虑
             prior_logits = torch.bmm(x.unsqueeze(1), K.transpose(-1, -2)).squeeze(1) # [n_batch, N]
             prior_logits.masked_fill_(knowledge_length, -1e9)
+            prior = F.log_softmax(prior_logits, dim=-1)
+            # 测试时并不需要进行反向传播，所以直接用max得到概率最大的那条知识
+            k_idx = prior.max(1)[1].unsqueeze(1)  # k_idx: [n_batch, 1] 直接根据先验分布选择的知识索引
+            for i in range(n_batch):
+                k_i[i] = K[i, k_idx[i]]  # 得到每个样本选择的知识的hidden
+            return k_i  # k_i: [n_batch, 2*n_hidden]
+
+
+class Manager_Difference(nn.Module):
+    def __init__(self, n_hidden, n_vocab, temperature, n_embed, n_layer):
+        super(Manager, self).__init__()
+        self.n_hidden = n_hidden
+        self.n_vocab = n_vocab
+        self.temperature = temperature
+        self.mlp = nn.Linear(4*n_hidden, 2*n_hidden)
+        self.mlp_k = nn.Linear(2*n_hidden, n_vocab)
+        self.gru = nn.GRU(input_size=2*n_hidden, hidden_size=n_hidden,
+                          num_layers=n_layer, bidirectional=True, batch_first=True)
+        self.mlp2 = nn.Linear(4*n_hidden, 2*n_hidden)
+        self.mlp3 = nn.Linear(4*n_hidden, 2*n_hidden)
+        self.attn = Attention(n_hidden=2*n_hidden)
+
+    def forward(self, x, y, K, knowledge_length, encode_last_knowledge, first_is_eos):
+        '''
+        :param x:
+            encoded utterance in shape (B, 2*H)
+        :param y:
+            encoded response in shape (B, 2*H) (optional)
+        :param K:
+            encoded knowledge in shape (B, N, 2*H)
+        :param knowledge_length:
+            if the length of knowledge is 0, shape: (n_batch, N)
+        :param encode_last_knowledge:
+            the knowledge selected in the last turn, shape: [n_batch, 2*n_hidden]
+        :param first_is_eos:
+            if the knowledge selected in the last turn is None, shape: [n_batch]
+        :return:
+            prior, posterior, selected knowledge, selected knowledge logits for BOW_loss
+        '''
+        # ToDo: 引入知识的差异信息，采用解耦的差异感知模型
+        # 计算diff_logits时不采用点积注意力模型，而是采用加性模型，query保持不变，作为key的知识张量需要再连接上知识差异特征
+        last_knowledge = encode_last_knowledge.repeat(K.size(1),1,1).transpose(0,1)   # [n_batch, N, 2*n_hidden]
+        # 在这里根据上一轮选择的知识(B, 2*H)计算当前轮所有知识的差异信息
+        diff_r, diff_hidden = self.gru(K) # [n_batch, N, 2*hidden], [4, n_batch, hidden]
+
+        diff_o = self.mlp2(torch.cat((last_knowledge-diff_r, torch.mul(last_knowledge, diff_r)),dim=-1)) # [n_batch, N, 2*hidden]
+        # 注意：标签是“未选择任何知识”时，将差异特征置0
+        first_is_eos = first_is_eos.unsqueeze(1).unsqueeze(1).repeat(1,K.size(1), diff_o.size(2)) # [n_batch, N, 2*hidden]
+        diff_o.masked_fill_(first_is_eos, 0)
+        diff_r_o = torch.cat((diff_r, diff_o), dim=-1) # [n_batch, N, 4*hidden]
+        diff_logits = self.attn(encode_last_knowledge, self.mlp3(diff_r_o).transpose(0,1))
+        # 将长度为0的知识对应的可能性置为0，即不考虑
+        diff_logits.masked_fill_(knowledge_length, -1e9)
+
+
+        if y is not None:   # 训练时
+            # 将长度为0的知识对应的可能性置为0，即不考虑，保证满足prior为log-probabilities, sum(posterior)=1
+            prior_logits = torch.bmm(x.unsqueeze(1), K.transpose(-1, -2)).squeeze(1) # [n_batch, N]
+            prior_logits.masked_fill_(knowledge_length, -1e9)
+            prior_diff_logits = prior_logits + diff_logits
+            prior = F.log_softmax(prior_diff_logits, dim=-1)
+
+            response = self.mlp(torch.cat((x, y), dim=-1))  # response: [n_batch, 2*n_hidden]
+            K = K.transpose(-1, -2)  # K: [n_batch, 2*n_hidden, N]
+            posterior_logits = torch.bmm(response.unsqueeze(1), K).squeeze(1)  # [n_batch, N]
+            posterior_logits.masked_fill_(knowledge_length, -1e9)
+            posterior_diff_logits = posterior_logits + diff_logits
+            posterior = F.softmax(posterior_diff_logits, dim=-1)
+
+            # k_idx = gumbel_softmax(posterior_logits, self.temperature, self.mlp.weight.device)  # k_idx: [n_batch, N(one_hot)]
+            k_idx = gumbel_softmax(posterior_diff_logits, self.temperature, hard=True) # k_idx: [n_batch, N(one_hot)]
+            k_i = torch.bmm(K, k_idx.unsqueeze(2)).squeeze(2)  # k_i: [n_batch, 2*n_hidden] 获取选择的知识的hidden
+            k_logits = F.log_softmax(self.mlp_k(k_i), dim=-1)  # k_logits: [n_batch, n_vocab] 根据知识得到词的分布
+
+            return prior, posterior, k_i, k_logits  # prior: [n_batch, N], posterior: [n_batch, N]
+        else:   # 测试时
+            # 由于数据处理的缘故，只能假设测试时已知上一轮对话的正确知识标签
+            n_batch = K.size(0)
+            k_i = torch.Tensor(n_batch, 2*self.n_hidden).to(self.mlp.weight.device) # 存储每个样本选择的知识的hidden
+            # 将长度为0的知识对应的可能性置为0，即不考虑
+            prior_logits = torch.bmm(x.unsqueeze(1), K.transpose(-1, -2)).squeeze(1) # [n_batch, N]
+            prior_logits.masked_fill_(knowledge_length, -1e9)
+            prior_diff_logits = prior_logits + diff_logits
             prior = F.log_softmax(prior_logits, dim=-1)
 
             k_idx = prior.max(1)[1].unsqueeze(1)  # k_idx: [n_batch, 1] 直接根据先验分布选择的知识索引
@@ -201,6 +292,7 @@ class Attention(nn.Module):
             attn_scores.masked_fill_(encoder_mask, -1e9)
         attn_weights = F.softmax(attn_scores, dim=-1)  # [n_batch, 1, seq_len]
         return attn_weights  # [n_batch, 1, seq_len]
+
 
 
 class Decoder(nn.Module):  # Hierarchical Gated Fusion Unit
@@ -356,3 +448,67 @@ class Seq2Seq(nn.Module):
             output = tgt_y[:, t] if is_teacher else top1
         
         return outputs
+
+class PostKS_Difference(nn.Module):
+    def __init__(self, n_vocab, n_embed, n_hidden, n_layer, temperature, vocab=None):
+        super(PostKS_Difference, self).__init__()
+        self.n_vocab = n_vocab
+        self.n_embed = n_embed
+        self.n_hidden = n_hidden
+        self.n_layer = n_layer
+        self.temperature = temperature
+        self.vocab = vocab
+
+        self.emlayer = EmbeddingLayer(n_vocab, n_embed, vocab)
+        self.encoder = Encoder(n_vocab, n_embed, n_hidden, n_layer, vocab, self.emlayer)
+        self.Kencoder = KnowledgeEncoder(n_vocab, n_embed, n_hidden, n_layer, vocab, self.emlayer)
+        self.manager = Manager_Difference(n_hidden, n_vocab, temperature,n_embed, n_layer)
+        self.decoder = Decoder(n_vocab, n_embed, n_hidden, n_layer, vocab, self.emlayer)
+
+    def forward(self, src_X, src_y, src_K, tgt_y, trf, pre_train=False, is_test=False, last_select_knowledge=None):
+        # last_select_knowledge: [n_batch, seq_len]
+        # 若第一位是<EOS>，表示对应的知识是空的
+        first_is_eos = last_select_knowledge[:, 0] == 3 # [n_batch]
+        # 对上一轮选择的知识进行编码
+        encode_last_knowledge = self.Kencoder(last_select_knowledge, is_last_knowledge=True)
+
+        if pre_train:
+            encoder_outputs, hidden, x = self.encoder(src_X)
+            y = self.Kencoder(src_y)
+            K, knowledge_length = self.Kencoder(src_K)
+            prior, posterior, k_i, k_logits = self.manager(x, y, K, knowledge_length, encode_last_knowledge, first_is_eos)
+            # k_logits: [n_batch, n_vocab]
+
+            return k_logits
+
+        else:
+            encoder_outputs, hidden, x = self.encoder(src_X)
+            # 每个批次的最长序列长度不一定等于数据集中的最长序列长度
+            encoder_mask = (src_X == 0)[:, :encoder_outputs.size(0)].unsqueeze(1).bool() # fix warning bug
+            if is_test:
+                y = None
+            else:
+                y = self.Kencoder(src_y)
+            K, knowledge_length = self.Kencoder(src_K)
+            if is_test:
+                k_i = self.manager(x, y, K, knowledge_length, encode_last_knowledge, first_is_eos)
+            else:
+                prior, posterior, k_i, k_logits = self.manager(x, y, K, knowledge_length, encode_last_knowledge, first_is_eos)
+
+            n_batch = src_X.size(0)
+            max_len = tgt_y.size(1)
+            outputs = torch.zeros(max_len, n_batch, self.n_vocab).to(self.emlayer.embedding.weight.device)
+            hidden = hidden[self.n_layer:]
+
+            output = torch.LongTensor([params.SOS] * n_batch).to(self.emlayer.embedding.weight.device)  # [n_batch]
+            for t in range(max_len):
+                output, hidden, attn_weights = self.decoder(output, k_i, hidden, encoder_outputs, encoder_mask)
+                outputs[t] = output
+                is_teacher = random.random() < trf  # teacher forcing ratio
+                top1 = output.data.max(1)[1]
+                output = tgt_y[:, t] if is_teacher else top1
+            
+            if is_test:
+                return outputs
+            else:
+                return prior, posterior, k_logits, outputs

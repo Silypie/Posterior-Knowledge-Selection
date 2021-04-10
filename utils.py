@@ -145,11 +145,13 @@ def load_data(path, vocab, samples_path):
         X = []
         K = []  # 二维，[轮数, 知识数]
         y = []
+        k_last_select = []  # 上一轮选择的知识标签（0是不选择任何知识）
 
         for data in datas:  #每个对话
             posts = data['posts']
             responses = data['responses']
             knowledges = data['knowledges']
+            knowledge_labels = data['labels']
             # 每轮对话
             for i in range(len(posts)):
                 # 并没有考虑对话历史，只对每轮对话进行知识选择和回复生成
@@ -159,6 +161,15 @@ def load_data(path, vocab, samples_path):
                 # 不是第一轮才需要添加对话历史
                 if i !=0 :
                     tmp_x = posts[i-1] + ' ' + responses[i-1] + ' ' +tmp_x
+                # 第一轮对话不存在上一轮选择的知识
+                if i ==0:
+                    k_last_select.append(-1) # -1 表示这是第1轮对话，知识全用<EOS>填充
+                else:
+                    label = knowledge_labels[i-1]
+                    if label == 0:
+                        k_last_select.append(-1)    # -1也表示上一轮没有选择知识，知识全用<EOS>填充
+                    else:
+                        k_last_select.append(label-1) # 需要将标签索引-1
                 X.append(tmp_x)
                 y.append(responses[i])
                 K.append(knowledges[i]) # K的每个元素是一轮对话涉及到的所有知识
@@ -215,6 +226,7 @@ def load_data(path, vocab, samples_path):
     src_y = list()
     src_K = list()
     tgt_y = list()
+    last_select_knowledge = list()
 
     # 所有样本进行对齐操作
     for line in X_ind:
@@ -232,17 +244,27 @@ def load_data(path, vocab, samples_path):
     for lines in K_ind: # 每轮对话
         src_k = list()
         for line in lines: # 每个知识
-            if len(line) < k_len:
-                line.extend([params.PAD] * (k_len - len(line)))
-            elif len(line) > k_len:
-                line = line[:k_len]
-            src_k.append(line)
+            # 数据中存在长度为0的知识，不考虑
+            if len(line) ==0:
+                pass
+            else:
+                if len(line) < k_len:
+                    line.extend([params.PAD] * (k_len - len(line)))
+                elif len(line) > k_len:
+                    line = line[:k_len]
+                src_k.append(line)
         # 对齐知识数
         gap = num_k - len(src_k)
         knowledge_pad = [params.EOS] * k_len
         for i in range(gap):
             src_k.append(knowledge_pad)
         src_K.append(src_k)
+    # 根据label直接找到上一轮对应知识的index表示
+    for i in range(len(k_last_select)):
+        if k_last_select[i] == -1:
+            last_select_knowledge.append([params.EOS] * k_len)
+        else:
+            last_select_knowledge.append(src_K[i][k_last_select[i]])
     
     # 将处理好的结果按样本分割成多个文件保存，以防重复计算和占用过多内存
     for i in range(len(src_X)):
@@ -257,15 +279,16 @@ def load_data(path, vocab, samples_path):
             # 第一行：src_x \t src_y \t tgt_y \n
             out_line = ' '.join([str(x) for x in src_X[i]]) + '\t' + ' '.join([str(y) for y in src_y[i]]) + '\t' + ' '.join([str(y) for y in tgt_y[i]])
             fout.write(out_line+"\n")
-            # 第二行：k1 \t ... \t kn
+            # 第二行：last_select_knowledge
+            out_line = ' '.join([str(k) for k in last_select_knowledge[i]])
+            fout.write(out_line+"\n")
+            # 第三行：k1 \t ... \t kn \t
             out_line = ''
             for j in range(len(src_K[i])):
                 out_line = out_line + ' '.join([str(k) for k in src_K[i][j]]) + '\t'
             fout.write(out_line)
 
     print("successfully store samples")
-    # 不用返回任何东西，样本目录是已知的
-    # return X_ind, y_ind, K_ind
 
 
 def get_data_loader(samples_path, n_batch, nccl):
@@ -314,14 +337,17 @@ class WizardDataset(Dataset):
             src_y = torch.LongTensor([int(y) for y in src_y.split(" ")])
             tgt_y = torch.LongTensor([int(y) for y in tgt_y.split(" ")])
 
-            line_2 = f.readline()
-            knowledges = line_2.split('\t')[:-1]
+            line_2 = f.readline().strip()
+            last_select_knowledge = torch.LongTensor([int(k) for k in line_2.split(" ")])
+
+            line_3 = f.readline()
+            knowledges = line_3.split('\t')[:-1]
             src_K = torch.ones(len(knowledges),100,dtype=int)
             for i in range(len(knowledges)):
                 src_k = torch.LongTensor([int(k) for k in knowledges[i].split(" ")])
                 src_K[i] = src_k
 
-        return src_x, src_y, src_K, tgt_y
+        return src_x, src_y, src_K, tgt_y, last_select_knowledge
 
     def __len__(self):
         num = 0

@@ -9,7 +9,7 @@ from torch.nn.utils import clip_grad_norm_
 import params
 from utils import init_model, \
     build_vocab, load_data, get_data_loader, Vocabulary, save_model
-from model import PostKS
+from model import PostKS_Difference
 from torch.utils.tensorboard import SummaryWriter
 
 
@@ -32,7 +32,7 @@ def parse_arguments():
                    help='whether restore trained model')
     p.add_argument("--local_rank", type=int, default=0, help="multi gpu traning")
     p.add_argument('-train_path', type=str, default="data/prepared_data/train.json")
-    p.add_argument('-train_samples_path', type=str, default="data/prepared_data/train_samples/")
+    p.add_argument('-train_samples_path', type=str, default="data/prepared_data/diff_train_samples/")
     return p.parse_args()
 
 
@@ -47,16 +47,18 @@ def pre_train(model, optimizer, train_loader, args, device, train_sampler, loss_
             train_sampler.set_epoch(epoch)
         b_loss = 0
         b_loss_epoch = 0
-        for step, (src_X, src_y, src_K, _, last_k) in enumerate(train_loader):
+        for step, (src_X, src_y, src_K, _, last_select_knowledge) in enumerate(train_loader):
             src_X = src_X.to(device)
             src_y = src_y.to(device)
             src_K = src_K.to(device)
+            last_select_knowledge = last_select_knowledge.to(device)
             step_num += 1
 
             optimizer.zero_grad()
             n_vocab = params.n_vocab
 
-            k_logits = model.forward(src_X, src_y, src_K, _, args.tfr, True, False) # k_logits: [n_batch, n_vocab]
+            k_logits = model.forward(src_X, src_y, src_K, _, args.tfr, True, False, last_select_knowledge) 
+            # k_logits: [n_batch, n_vocab]
 
             seq_len = src_y.size(1) - 1
             k_logits = k_logits.repeat(seq_len, 1, 1).transpose(0, 1).contiguous().view(-1, n_vocab) # [n_batch*seq_len, n_vocab]
@@ -82,7 +84,7 @@ def pre_train(model, optimizer, train_loader, args, device, train_sampler, loss_
     
         # save model
         if args.local_rank == 0:
-            save_model(model, params.integrated_restore, b_loss_epoch/len(train_loader), loss_file_name)
+            save_model(model, params.difference_aware_restore, b_loss_epoch/len(train_loader), loss_file_name)
 
 
 def train(model, optimizer, train_loader, args, device, train_sampler, loss_file_name):
@@ -102,17 +104,18 @@ def train(model, optimizer, train_loader, args, device, train_sampler, loss_file
         n_loss = 0
         t_loss = 0
         t_loss_epoch = 0
-        for step, (src_X, src_y, src_K, tgt_y, last_k) in enumerate(train_loader):
+        for step, (src_X, src_y, src_K, tgt_y, last_select_knowledge) in enumerate(train_loader):
             src_X = src_X.to(device)
             src_y = src_y.to(device)
             src_K = src_K.to(device)
             tgt_y = tgt_y.to(device)
+            last_select_knowledge = last_select_knowledge.to(device)
             step_num += 1
 
             optimizer.zero_grad()
             n_vocab = params.n_vocab
 
-            prior, posterior,k_logits, outputs = model.forward(src_X, src_y, src_K, tgt_y, args.tfr, False, False)
+            prior, posterior,k_logits, outputs = model.forward(src_X, src_y, src_K, tgt_y, args.tfr, False, False, last_select_knowledge)
 
             kldiv_loss = KLDLoss(prior, posterior.detach())
 
@@ -168,7 +171,7 @@ def train(model, optimizer, train_loader, args, device, train_sampler, loss_file
 
         # save model
         if args.local_rank == 0:
-            save_model(model, params.integrated_restore, t_loss_epoch/len(train_loader), loss_file_name)
+            save_model(model, params.difference_aware_restore, t_loss_epoch/len(train_loader), loss_file_name)
     if args.local_rank == 0:
         writer.close()
 
@@ -203,6 +206,7 @@ def main():
         if args.local_rank == 0:
             with open('vocab.json', 'w') as fp:
                 json.dump(vocab.stoi, fp)
+                
     if args.local_rank == 0:
         print("successfully build vocab")
         # 只在主进程里处理数据（字符转索引，对齐，分样本保存）
@@ -217,7 +221,7 @@ def main():
 
     device = torch.device(args.local_rank if torch.cuda.is_available() else "cpu")
 
-    model = PostKS(n_vocab, n_embed, n_hidden, n_layer, temperature, vocab).to(device)
+    model = PostKS_Difference(n_vocab, n_embed, n_hidden, n_layer, temperature, vocab).to(device)
     if nccl_available:
         model = torch.nn.parallel.DistributedDataParallel(model,
                                                         device_ids=[args.local_rank],
@@ -225,7 +229,7 @@ def main():
                                                         find_unused_parameters=True)
 
     if args.restore:
-        model = init_model(model, device, restore=params.integrated_restore)
+        model = init_model(model, device, restore=params.difference_aware_restore)
         if args.local_rank == 0:
             print('init model with saved parameter')
     # 进程同步，防止有些进程还没初始化完模型就开始训练
@@ -233,7 +237,7 @@ def main():
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
-    loss_file_name = params.model_root + 'PostKS_loss.json'
+    loss_file_name = params.model_root + 'PostKS_difference_loss.json'
 
     # pre_train knowledge manager
     if args.local_rank == 0:

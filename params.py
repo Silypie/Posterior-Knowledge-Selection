@@ -24,3 +24,4 @@ model_root = "snapshots/"
 
 integrated_restore = "snapshots/PostKS-integrated.pt"
 seq2seq_restore = "snapshots/Seq2Seq-model.pt"
+difference_aware_restore = "snapshots/PostKS_difference_aware"

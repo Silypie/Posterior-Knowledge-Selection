@@ -44,7 +44,7 @@ def train(model, optimizer, train_loader, args, device, train_sampler, loss_file
             train_sampler.set_epoch(epoch)
         n_loss = 0
         n_loss_epoch = 0
-        for step, (src_X, src_y, src_K, tgt_y) in enumerate(train_loader):
+        for step, (src_X, src_y, src_K, tgt_y, last_k) in enumerate(train_loader):
             src_X = src_X.to(device)
             tgt_y = tgt_y.to(device)
             step_num += 1

@@ -5,7 +5,7 @@ import torch.nn as nn
 import params
 import argparse
 from utils import init_model, Vocabulary, build_vocab, load_data, get_data_loader
-from model import PostKS, Seq2Seq
+from model import PostKS, Seq2Seq, PostKS_Difference
 from parlai.core.metrics import RougeMetric, BleuMetric, InterDistinctMetric, F1Metric
 from rich import print
 
@@ -18,12 +18,12 @@ def parse_arguments():
                    help='whether test unseen dataset')
     p.add_argument('-output', type=str, default='output',
                     help='output file name')
-    p.add_argument('-model', type='str', default='postks',
+    p.add_argument('-model_type', type=str, default='postks',
                     help='specify PostKS or Seq2Seq for testing')
     return p.parse_args()
 
 
-def evaluate(model, test_loader, device, vocab, output_file_name, is_seq2seq=False):
+def evaluate(model, test_loader, device, vocab, output_file_name, model_type):
     model.eval()
     rouge = {'rouge-1':0.0, 'rouge-2':0.0, 'rouge-L':0.0}
     bleu = {'bleu-1':0.0, 'bleu-2':0.0, 'bleu-3':0.0, 'bleu-4':0.0}
@@ -32,16 +32,20 @@ def evaluate(model, test_loader, device, vocab, output_file_name, is_seq2seq=Fal
     all_responses = ""
 
     with open(output_file_name, 'w') as f:
-        for step, (src_X, _, src_K, tgt_y) in enumerate(test_loader):
+        for step, (src_X, _, src_K, tgt_y, last_select_knowledge) in enumerate(test_loader):
             src_X = src_X.to(device)
-            if not is_seq2seq:
+            if model_type != 'seq2seq':
                 src_K = src_K.to(device) # [n_batch, n_knowledge, 100]
             tgt_y = tgt_y.to(device) # [n_batch, max_len]
+            if model_type == 'postks_diff':
+                last_select_knowledge = last_select_knowledge.to(device)
 
-            if is_seq2seq:
+            if model_type == 'seq2seq':
                 outputs = model.forward(src_X, tgt_y, 0)
-            else:
+            elif model_type == 'postks':
                 outputs = model.forward(src_X, _, src_K, tgt_y, 0, False, True) # [max_len, n_batch, self.n_vocab]
+            elif model_type == 'postks_diff':
+                outputs = model.forward(src_X, _, src_K, tgt_y, 0, False, True, last_select_knowledge)
             outputs = outputs.transpose(0, 1).contiguous()  # [n_batch, max_len, self.n_vocab]
 
             for i in range(outputs.size(0)):
@@ -95,14 +99,12 @@ def evaluate(model, test_loader, device, vocab, output_file_name, is_seq2seq=Fal
                 # 计算knowledge F1
                 knowledge_F1 += float(F1Metric.compute(response, knowledges))
 
-                # 每100个句子打印一下
-                if count % 100 ==0:
-                    print("Step [%.4d/%.4d]: rouge-1=%.4f rouge-2=%.4f rouge-L=%.4f \
-                            bleu-1=%.8f bleu-2=%.8f bleu-3=%.8f bleu-4=%.8f knowledge_F1=%.4f"
-                        % (step+1, len(test_loader), rouge['rouge-1']/count, rouge['rouge-2']/count, rouge['rouge-L']/count, 
-                        bleu['bleu-1']/count, bleu['bleu-2']/count, bleu['bleu-3']/count, bleu['bleu-4']/count, knowledge_F1/count))
-            if step == 50:
-                break
+            # 每100个step打印一下
+            if (step + 1) % 100 == 0:
+                print("Step [%.4d/%.4d]: rouge-1=%.4f rouge-2=%.4f rouge-L=%.4f \
+                        bleu-1=%.8f bleu-2=%.8f bleu-3=%.8f bleu-4=%.8f knowledge_F1=%.4f"
+                    % (step+1, len(test_loader), rouge['rouge-1']/count, rouge['rouge-2']/count, rouge['rouge-L']/count, 
+                    bleu['bleu-1']/count, bleu['bleu-2']/count, bleu['bleu-3']/count, bleu['bleu-4']/count, knowledge_F1/count))
 
     # 计算Distinct
     all_responses = all_responses.strip()
@@ -116,6 +118,14 @@ def evaluate(model, test_loader, device, vocab, output_file_name, is_seq2seq=Fal
             % (rouge['rouge-1']/count, rouge['rouge-2']/count, rouge['rouge-L']/count, 
             bleu['bleu-1']/count, bleu['bleu-2']/count, bleu['bleu-3']/count, bleu['bleu-4']/count, 
             distinct_1, distinct_2, knowledge_F1/count))
+    with open(output_file_name, 'a') as f:
+        s = "rouge-1=%.8f rouge-2=%.8f rouge-L=%.8f \
+                bleu-1=%.8f bleu-2=%.8f bleu-3=%.8f bleu-4=%.8f \
+                distinct-1=%.8f distinct-2=%.8f knowledge_F1=%.8f" \
+            % (rouge['rouge-1']/count, rouge['rouge-2']/count, rouge['rouge-L']/count, 
+            bleu['bleu-1']/count, bleu['bleu-2']/count, bleu['bleu-3']/count, bleu['bleu-4']/count, 
+            distinct_1, distinct_2, knowledge_F1/count)
+        f.write(s)
 
 
 def main():
@@ -157,7 +167,7 @@ def main():
     load_data(test_path, vocab, test_samples_path)
     test_sampler, test_loader = get_data_loader(test_samples_path, n_batch, nccl=False) # 暂时在单卡上测试
     print("successfully loaded")
-    if args.model == 'postks':
+    if args.model_type == 'postks':
         model = PostKS(n_vocab, n_embed, n_hidden, n_layer, temperature, vocab).to(device)
 
         # 测试时不使用数据并行模式，需对参数名进行转换，去除module. 前缀
@@ -165,15 +175,24 @@ def main():
         print('init model with saved parameter')
 
         print("start evaluating")
-        evaluate(model, test_loader, device, vocab, output_file_name, is_seq2seq=False)
-    elif args.model == 'seq2seq':
+        evaluate(model, test_loader, device, vocab, output_file_name, model_type='postks')
+    elif args.model_type == 'seq2seq':
         model = Seq2Seq(n_vocab, n_embed, n_hidden, n_layer, vocab).to(device)
 
         model = init_model(model, device, restore=params.seq2seq_restore, is_test=True)
         print('init model with saved parameter')
 
         print("start evaluating")
-        evaluate(model, test_loader, device, vocab, output_file_name, is_seq2seq=True)
+        evaluate(model, test_loader, device, vocab, output_file_name, model_type ='seq2seq')
+    elif args.model_type == 'postks_diff':
+        model = PostKS_Difference(n_vocab, n_embed, n_hidden, n_layer, temperature, vocab).to(device)
+
+        # 测试时不使用数据并行模式，需对参数名进行转换，去除module. 前缀
+        model = init_model(model, device, restore=params.difference_aware_restore, is_test=True)
+        print('init model with saved parameter')
+
+        print("start evaluating")
+        evaluate(model, test_loader, device, vocab, output_file_name, model_type='postks_diff')
 
 
 if __name__ == "__main__":

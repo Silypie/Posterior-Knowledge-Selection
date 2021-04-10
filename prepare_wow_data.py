@@ -22,6 +22,7 @@ for key, name in zip(file_names, save_names):
         new_data['responses'] = data['response']
         assert all(e[0] == 'no_passages_used __knowledge__ no_passages_used' for e in data['knowledge'])
         new_data['knowledges'] = [list(map(lambda x: x.split('__knowledge__')[1], e[1:])) for e in data['knowledge']]
+        new_data['labels'] = data['labels']
         assert len(new_data['responses'])==len(new_data['knowledges']) and len(new_data['posts'])==len(new_data['responses'])
         total_data.append(new_data)
 
