@@ -9,8 +9,8 @@ n_hidden = 800
 n_embed = 300
 temperature = 0.8
 
-train_path = "data/prepared_data/train.json"
-train_samples_path = "data/prepared_data/train_samples/"
+train_path = "data/prepared_data/valid.json"
+train_samples_path = "data/prepared_data/valid_samples/"
 
 test_seen_path = "data/prepared_data/test_seen.json"
 test_seen_samples_path = "data/prepared_data/test_seen__samples/"

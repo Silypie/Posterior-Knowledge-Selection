@@ -63,16 +63,18 @@ def origin_sentence(path):
             vocab.itos.append(key)
     else:
         vocab = build_vocab(params.train_path, params.n_vocab)
-    for i in range(4):
-        src_X, src_y, src_K, tgt_y = dataset[i]
+    for i in range(2):
+        src_X, src_y, src_K, tgt_y, last_k = dataset[i]
         print("x_shape",src_X.shape)
         print("y.shape", src_y.shape)
         print("K.shape", src_K.shape)
         print("tgt_y.shape",tgt_y.shape)
+        print('last_k.shape', last_k.shape)
         print('X: ',origin(src_X, vocab))
         print('y: ',origin(src_y, vocab))
         print('K: ',origin(src_K[0], vocab))
         print('tgt_y: ',origin(tgt_y, vocab))
+        print('last_k', origin(last_k, vocab))
 
 def cal_rouge():
     evaluator = rouge.Rouge(metrics=['rouge-n', 'rouge-l'], max_n=2)
